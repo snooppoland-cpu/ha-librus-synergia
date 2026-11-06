@@ -29,6 +29,7 @@ import logging
 from typing import Any
 
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
 from homeassistant.util import slugify
 
@@ -250,7 +251,7 @@ class LibrusAverageHistory:
         self._signature = signature
         try:
             self._async_write(data, today, weighted)
-        except Exception:  # noqa: BLE001 - statistics are a bonus, never break updates
+        except (HomeAssistantError, ValueError, TypeError, KeyError, AttributeError, OSError):
             _LOGGER.exception("Could not write grade-average statistics")
 
     @callback

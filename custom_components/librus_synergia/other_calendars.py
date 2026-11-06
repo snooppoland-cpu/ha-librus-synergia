@@ -13,6 +13,7 @@ from datetime import datetime
 
 from homeassistant.components.calendar import CalendarEntity
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
@@ -57,7 +58,7 @@ async def async_other_activities(
         try:
             async with asyncio.timeout(OTHER_CALENDAR_TIMEOUT):
                 events = await entity.async_get_events(hass, start, end)
-        except Exception as err:  # noqa: BLE001 - another integration's calendar
+        except (HomeAssistantError, TimeoutError, ValueError, TypeError, AttributeError, OSError, RuntimeError) as err:
             _LOGGER.debug("Skipping the other calendar %s: %r", entity_id, err)
             continue
         state = hass.states.get(entity_id)

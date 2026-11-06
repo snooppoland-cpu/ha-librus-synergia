@@ -58,7 +58,10 @@ from .attachment_view import async_register_attachment_view
 from .llm_api import async_setup_llm_api, async_unload_llm_api
 from .services import async_setup_services, async_unload_services
 
+from .security import CredentialFilter
+
 _LOGGER = logging.getLogger(__name__)
+_LOGGER.addFilter(CredentialFilter())
 
 type LibrusConfigEntry = ConfigEntry[LibrusDataUpdateCoordinator]
 
@@ -301,5 +304,5 @@ async def _async_clear_average_statistics(hass: HomeAssistant, entry_id: str) ->
         ]
         if ids:
             get_instance(hass).async_clear_statistics(ids)
-    except Exception:  # noqa: BLE001 - a statistics cleanup must never block removal
+    except (HomeAssistantError, KeyError, ValueError, TypeError, AttributeError, OSError):
         _LOGGER.warning("Could not remove the grade-average statistics", exc_info=True)

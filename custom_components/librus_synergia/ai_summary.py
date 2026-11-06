@@ -1102,7 +1102,7 @@ class LibrusWeeklySummary:
                 await self._async_save()
                 if results is not None:
                     self._fire_events(manual=scheduled_for is None)
-            except Exception as err:  # noqa: BLE001 - any provider error ends up here
+            except (HomeAssistantError, ValueError, TypeError, KeyError, TimeoutError, OSError, RuntimeError) as err:
                 self.last_error = explain_error(err)
                 _LOGGER.warning("Weekly summary failed: %s", self.last_error)
                 raise HomeAssistantError(f"Weekly summary failed: {self.last_error}") from err
@@ -1189,7 +1189,7 @@ class LibrusWeeklySummary:
                 blocking=True,
                 return_response=True,
             )
-        except Exception as err:
+        except (HomeAssistantError, ValueError, TypeError, KeyError) as err:
             if not _is_schema_error(err):
                 raise
             # A core whose ai_task has no `structure` support rejects the call

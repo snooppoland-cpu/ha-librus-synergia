@@ -27,6 +27,7 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import llm
 from homeassistant.util import dt as dt_util
 
@@ -1116,7 +1117,7 @@ def async_setup_llm_api(hass: HomeAssistant) -> None:
         unregister = llm.async_register_api(
             hass, LibrusLLMAPI(hass=hass, id=LLM_API_ID, name=LLM_API_NAME)
         )
-    except Exception as err:  # noqa: BLE001 - never block the integration over this
+    except (HomeAssistantError, ValueError, TypeError, AttributeError, RuntimeError) as err:
         _LOGGER.warning("Could not register the Librus Synergia LLM API: %s", err)
         return
     # Home Assistant before 2025 returns None and cannot unregister; the

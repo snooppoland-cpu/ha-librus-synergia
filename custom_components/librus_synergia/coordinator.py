@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD
 from homeassistant.core import CALLBACK_TYPE, CoreState, HomeAssistant, callback
-from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers import device_registry as dr, issue_registry as ir
 from homeassistant.helpers.event import async_call_later, async_track_time_change
 from homeassistant.helpers.start import async_at_started
@@ -43,6 +43,19 @@ from librus_synergia import (
 )
 from librus_synergia.const import EXTRA_ACTIVITY_ENDPOINTS, MESSAGE_RECIPIENT_GROUPS
 from librus_synergia.parsers import mark_class_tutor, message_recipient_groups
+
+from .models import (
+    AccountInfo,
+    ApiResponse,
+    AttendanceResponse,
+    GradeResponse,
+    LessonResponse,
+    MeResponse,
+    TeacherResponse,
+    UserInfo,
+)
+from .retry import async_retry_with_backoff
+from .security import SessionLock, sanitize_payload, validate_csrf_token
 from librus_synergia.changes import Changes, ChangeTracker, SeenIds
 from librus_synergia.exceptions import LibrusUnexpectedResponseError
 from librus_synergia.changes import absences as tracked_absences
@@ -494,7 +507,7 @@ def _has_lessons(payload: Any) -> bool:
     """Whether one week's raw timetable payload (either API) holds a lesson."""
     try:
         return any(merge_timetables(payload).values())
-    except Exception:  # noqa: BLE001 - a garbled payload just has no lessons
+    except (TypeError, KeyError, ValueError, AttributeError):
         return False
 
 
@@ -1167,8 +1180,9 @@ class LibrusDataUpdateCoordinator(DataUpdateCoordinator[LibrusData]):
         # answers are rechecked every cycle, then once an hour.
         self._messages_denials = 0
         self._messages_recheck_at: datetime | None = None
-        # Forced relogins one at a time (see _async_relogin).
-        self._login_lock = asyncio.Lock()
+        # Forced relogins and session synchronization (protected by SessionLock to avoid races).
+        self.session_lock = SessionLock()
+        self._login_lock = self.session_lock
         self._login_count = 0
         # Mailboxes Librus answered 404 for - this account doesn't have
         # them (the Messages card hides their chips). Asked again once a
@@ -1584,7 +1598,7 @@ class LibrusDataUpdateCoordinator(DataUpdateCoordinator[LibrusData]):
     async def _async_load(self, store: Store[dict[str, Any]]) -> dict[str, Any] | None:
         try:
             stored = await store.async_load()
-        except Exception:  # noqa: BLE001 - a corrupt file must not block setup
+        except (HomeAssistantError, OSError, ValueError, TypeError, KeyError):
             _LOGGER.warning("Could not read the saved Librus state - starting fresh", exc_info=True)
             return None
         return stored if isinstance(stored, dict) else None
@@ -1639,6 +1653,11 @@ class LibrusDataUpdateCoordinator(DataUpdateCoordinator[LibrusData]):
                 },
             )
         self._schedule_tracked_save()
+
+    def async_start_reauth(self) -> None:
+        """Trigger re-auth flow when credentials expire or change."""
+        if self.config_entry is not None:
+            self.config_entry.async_start_reauth(self.hass)
 
     def _restore_kindergarten(self, saved: Any) -> None:
         """The kindergarten child's LID, group and how it was found - kept so
@@ -1775,7 +1794,7 @@ class LibrusDataUpdateCoordinator(DataUpdateCoordinator[LibrusData]):
         ):
             try:
                 await store.async_save(build())
-            except Exception:  # noqa: BLE001 - see the docstring
+            except (HomeAssistantError, OSError, TypeError, ValueError):
                 _LOGGER.warning("Could not save the Librus state on unload", exc_info=True)
 
     def _maybe_schedule_save(self) -> None:
@@ -2726,11 +2745,12 @@ class LibrusDataUpdateCoordinator(DataUpdateCoordinator[LibrusData]):
         try:
             payload = await self._client.async_get_message(mailbox, message_id)
         except LibrusSessionExpiredError:
-            await self._async_relogin(seen)
-            self._messages_bootstrapped = False
-            self._messages_available = await self._client.async_bootstrap_messages()
-            self._messages_bootstrapped = True
-            payload = await self._client.async_get_message(mailbox, message_id)
+            async with self._login_lock:
+                await self._async_relogin(seen)
+                self._messages_bootstrapped = False
+                self._messages_available = await self._client.async_bootstrap_messages()
+                self._messages_bootstrapped = True
+                payload = await self._client.async_get_message(mailbox, message_id)
         # Opening a message marks it read, so this mailbox's cached list now
         # shows it unread. The unread count falls too and would trigger a
         # refetch anyway, but not when another message arrived meanwhile -
@@ -2745,8 +2765,10 @@ class LibrusDataUpdateCoordinator(DataUpdateCoordinator[LibrusData]):
         `LibrusMessageSendError` (`sent=False`) when the school has no
         messages module."""
         if not self._messages_bootstrapped:
-            self._messages_available = await self._client.async_bootstrap_messages()
-            self._messages_bootstrapped = True
+            async with self._login_lock:
+                if not self._messages_bootstrapped:
+                    self._messages_available = await self._client.async_bootstrap_messages()
+                    self._messages_bootstrapped = True
         if self._messages_available is False:
             raise LibrusMessageSendError(
                 "This account has no Wiadomości (messages module).", sent=False
@@ -2755,11 +2777,12 @@ class LibrusDataUpdateCoordinator(DataUpdateCoordinator[LibrusData]):
         try:
             return await request()
         except LibrusSessionExpiredError:
-            await self._async_relogin(seen)
-            self._messages_bootstrapped = False
-            self._messages_available = await self._client.async_bootstrap_messages()
-            self._messages_bootstrapped = True
-            return await request()
+            async with self._login_lock:
+                await self._async_relogin(seen)
+                self._messages_bootstrapped = False
+                self._messages_available = await self._client.async_bootstrap_messages()
+                self._messages_bootstrapped = True
+                return await request()
 
     async def async_message_recipients(self, *, force: bool = False) -> list[MessageRecipientData]:
         """Who a message can go to (see `librus_synergia.parsers.
@@ -2880,7 +2903,7 @@ class LibrusDataUpdateCoordinator(DataUpdateCoordinator[LibrusData]):
                 # user can check before trying again.
                 await self._async_refresh_outbox()
             raise
-        except BaseException:
+        except (LibrusError, HomeAssistantError, TimeoutError, OSError, ValueError, TypeError):
             self._forget_mailbox_list("outbox")
             raise
         await self._async_refresh_outbox()
@@ -3146,7 +3169,7 @@ class LibrusDataUpdateCoordinator(DataUpdateCoordinator[LibrusData]):
                 parse_justifications(self._last_good.get("Justifications") or {}),
                 {label: self._last_good.get(label) or {} for label in _EXTRA_LABELS},
             )
-        except Exception:  # noqa: BLE001 - a bad saved file must not block setup
+        except (TypeError, KeyError, ValueError, AttributeError):
             _LOGGER.warning("Could not rebuild data from the saved responses", exc_info=True)
             return None
 
@@ -4783,11 +4806,12 @@ class LibrusDataUpdateCoordinator(DataUpdateCoordinator[LibrusData]):
         try:
             return await self._client.async_download_message_attachment(attachment_id, message_id)
         except LibrusSessionExpiredError:
-            await self._async_relogin(seen)
-            self._messages_bootstrapped = False
-            self._messages_available = await self._client.async_bootstrap_messages()
-            self._messages_bootstrapped = True
-            return await self._client.async_download_message_attachment(attachment_id, message_id)
+            async with self._login_lock:
+                await self._async_relogin(seen)
+                self._messages_bootstrapped = False
+                self._messages_available = await self._client.async_bootstrap_messages()
+                self._messages_bootstrapped = True
+                return await self._client.async_download_message_attachment(attachment_id, message_id)
 
     async def async_download_homework_attachment(self, attachment_id: str) -> Any:
         """Download one homework-assignment attachment for the attachment
@@ -6210,7 +6234,7 @@ class LibrusDataUpdateCoordinator(DataUpdateCoordinator[LibrusData]):
                 homework_done=len(self.homework_done_ever),
                 owner=self.memo_owner,
             )
-        except Exception:  # noqa: BLE001 - badges must never fail the update
+        except (TypeError, KeyError, ValueError, AttributeError, ZeroDivisionError):
             _LOGGER.exception("Could not compute the badges")
             return
         self.badges = badges
