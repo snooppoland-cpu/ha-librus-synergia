@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import logging
 import re
 from collections.abc import Mapping
@@ -74,11 +75,16 @@ class CredentialFilter(logging.Filter):
         return True
 
 
-def validate_csrf_token(token: str | None, min_length: int = 8) -> str:
+def validate_csrf_token(
+    token: str | None,
+    session_secret: str | None = None,
+    min_length: int = 8,
+) -> str:
     """Validate that a CSRF token is present, non-empty, and structurally valid.
 
+    If session_secret is provided, verifies that the CSRF token matches it.
     Raises LibrusUnexpectedResponseError if the token is missing, too short,
-    or contains illegal characters.
+    contains illegal characters, or does not match session secret.
     """
     if token is None or not isinstance(token, str):
         raise LibrusUnexpectedResponseError("CSRF token is missing or not a string")
@@ -95,7 +101,14 @@ def validate_csrf_token(token: str | None, min_length: int = 8) -> str:
     if not _CSRF_TOKEN_RE.match(token_clean):
         raise LibrusUnexpectedResponseError("CSRF token contains invalid characters")
 
+    if session_secret is not None:
+        if not hmac.compare_digest(token_clean, session_secret):
+            raise LibrusUnexpectedResponseError("CSRF token does not match session secret")
+
     return token_clean
+
+
+_UNOWNED = object()
 
 
 class SessionLock:
@@ -105,11 +118,12 @@ class SessionLock:
     message retrieval, or coordinator updates) serialize session refreshes and
     logins, preventing session collisions and cookie overwrite races.
     Re-entrant for the same asyncio task so nested session calls do not deadlock.
+    Handles callers running without an active Task (asyncio.current_task() is None).
     """
 
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
-        self._owner: asyncio.Task[Any] | None = None
+        self._owner: Any = _UNOWNED
         self._count = 0
 
     @property
@@ -120,7 +134,7 @@ class SessionLock:
     async def acquire(self) -> None:
         """Acquire the session lock, supporting re-entrancy within the same task."""
         current = asyncio.current_task()
-        if self._owner is current:
+        if current is not None and self._owner is current:
             self._count += 1
             return
         await self._lock.acquire()
@@ -129,14 +143,14 @@ class SessionLock:
 
     def release(self) -> None:
         """Release the session lock."""
+        if not self._lock.locked():
+            return
         current = asyncio.current_task()
         if self._owner is not current:
-            if not self._lock.locked():
-                return
             raise RuntimeError("Cannot release lock owned by another task")
         self._count -= 1
         if self._count == 0:
-            self._owner = None
+            self._owner = _UNOWNED
             self._lock.release()
 
     async def __aenter__(self) -> SessionLock:

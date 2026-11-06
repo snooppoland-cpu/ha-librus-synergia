@@ -79,19 +79,23 @@ async def _async_download(
     # module must not pull in at import time of __init__.
     from .services import resolve_coordinator  # noqa: PLC0415
 
-    # Validate CSRF token when passed in request headers
-    csrf_token = request.headers.get("X-CSRF-Token")
-    if csrf_token is not None:
-        try:
-            validate_csrf_token(csrf_token)
-        except (LibrusError, ValueError, TypeError):
-            return web.Response(status=HTTPStatus.FORBIDDEN, text="Invalid CSRF token")
-
     hass: HomeAssistant = request.app["hass"]
     try:
         coordinator = resolve_coordinator(hass, device_id)
     except HomeAssistantError as err:
         return web.Response(status=HTTPStatus.NOT_FOUND, text=str(err))
+
+    # Mandatory CSRF validation compared against session secret
+    csrf_token = request.headers.get("X-CSRF-Token") or request.query.get("csrf_token")
+    session_secret = (
+        getattr(coordinator, "session_secret", None)
+        or request.headers.get("X-Session-Secret")
+        or request.cookies.get("session_secret")
+    )
+    try:
+        validate_csrf_token(csrf_token, session_secret=session_secret)
+    except (LibrusError, ValueError, TypeError):
+        return web.Response(status=HTTPStatus.FORBIDDEN, text="Invalid CSRF token")
     try:
         file = await download(coordinator)
     except LibrusError as err:

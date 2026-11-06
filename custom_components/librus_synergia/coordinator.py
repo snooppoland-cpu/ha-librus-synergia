@@ -17,7 +17,8 @@ import copy
 import dataclasses
 import logging
 import re
-from collections.abc import Awaitable, Callable
+import secrets
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import date, datetime, time, timedelta
 from functools import partial
 from typing import TYPE_CHECKING, Any, TypeVar
@@ -45,17 +46,15 @@ from librus_synergia.const import EXTRA_ACTIVITY_ENDPOINTS, MESSAGE_RECIPIENT_GR
 from librus_synergia.parsers import mark_class_tutor, message_recipient_groups
 
 from .models import (
-    AccountInfo,
     ApiResponse,
     AttendanceResponse,
     GradeResponse,
     LessonResponse,
     MeResponse,
     TeacherResponse,
-    UserInfo,
 )
 from .retry import async_retry_with_backoff
-from .security import SessionLock, sanitize_payload, validate_csrf_token
+from .security import SessionLock
 from librus_synergia.changes import Changes, ChangeTracker, SeenIds
 from librus_synergia.exceptions import LibrusUnexpectedResponseError
 from librus_synergia.changes import absences as tracked_absences
@@ -533,9 +532,63 @@ def _as_id(value: Any) -> Any:
         return str(value)
 
 
+def parse_grade_responses(payload: Any) -> list[GradeResponse]:
+    """Parse raw Grades payload into typed GradeResponse objects."""
+    items = payload.get("Grades") if isinstance(payload, dict) else None
+    if not isinstance(items, list):
+        return []
+    return [GradeResponse.from_dict(item) for item in items if isinstance(item, Mapping)]
+
+
+def parse_lesson_responses(payload: Any) -> list[LessonResponse]:
+    """Parse raw Timetable/Lessons payload into typed LessonResponse objects."""
+    items = payload.get("Timetable") or payload.get("Lessons") if isinstance(payload, dict) else None
+    if isinstance(items, dict):
+        lessons: list[LessonResponse] = []
+        for day_lessons in items.values():
+            if isinstance(day_lessons, list):
+                for entry in day_lessons:
+                    if isinstance(entry, Mapping):
+                        lessons.append(LessonResponse.from_dict(entry))
+        return lessons
+    if isinstance(items, list):
+        return [LessonResponse.from_dict(item) for item in items if isinstance(item, Mapping)]
+    return []
+
+
+def parse_attendance_responses(payload: Any) -> list[AttendanceResponse]:
+    """Parse raw Attendances payload into typed AttendanceResponse objects."""
+    items = payload.get("Attendances") if isinstance(payload, dict) else None
+    if not isinstance(items, list):
+        return []
+    return [AttendanceResponse.from_dict(item) for item in items if isinstance(item, Mapping)]
+
+
+def parse_teacher_responses(payload: Any) -> list[TeacherResponse]:
+    """Parse raw Teachers payload into typed TeacherResponse objects."""
+    items = None
+    if isinstance(payload, dict):
+        for key in ("Users", "Teachers"):
+            if key in payload:
+                items = payload[key]
+                break
+    if not isinstance(items, list):
+        return []
+    return [TeacherResponse.from_dict(item) for item in items if isinstance(item, Mapping)]
+
+
+def wrap_api_response(data: Any, message: str | None = None) -> ApiResponse[Any]:
+    """Wrap API response data in generic ApiResponse dataclass."""
+    return ApiResponse(status="ok", data=data, message=message)
+
+
 def _referenced_ids(payload: Any, list_key: str, field: str) -> set[Any]:
     """Ids of `field` (`{"Id": ...}`) across the items of a raw list payload,
     e.g. every grade's category id."""
+    if list_key == "Grades" and field == "Category":
+        return {_as_id(g.category_id) for g in parse_grade_responses(payload) if g.category_id is not None}
+    if list_key == "Grades" and field == "Subject":
+        return {_as_id(g.subject_id) for g in parse_grade_responses(payload) if g.subject_id is not None}
     items = payload.get(list_key) if isinstance(payload, dict) else None
     ids: set[Any] = set()
     for item in items if isinstance(items, list) else []:
@@ -1183,6 +1236,7 @@ class LibrusDataUpdateCoordinator(DataUpdateCoordinator[LibrusData]):
         # Forced relogins and session synchronization (protected by SessionLock to avoid races).
         self.session_lock = SessionLock()
         self._login_lock = self.session_lock
+        self.session_secret: str = secrets.token_hex(16)
         self._login_count = 0
         # Mailboxes Librus answered 404 for - this account doesn't have
         # them (the Messages card hides their chips). Asked again once a
@@ -2434,6 +2488,7 @@ class LibrusDataUpdateCoordinator(DataUpdateCoordinator[LibrusData]):
             for value in values:
                 candidates.setdefault(value, source)
 
+        me_resp = MeResponse.from_dict(me_payload)
         me = me_payload.get("Me") if isinstance(me_payload, dict) else None
         me = me if isinstance(me, dict) else {}
         add(collect_lid_user_identifiers(me.get("User")), "Me.User")
@@ -2446,13 +2501,11 @@ class LibrusDataUpdateCoordinator(DataUpdateCoordinator[LibrusData]):
             user_info = await self._async_probe(self._client.async_get_user_info(token_lid))
             add(collect_lid_user_identifiers(user_info), "Auth/UserInfo")
 
-        account = me.get("Account")
-        account = account if isinstance(account, dict) else {}
         numeric_ids: dict[int, str] = {}  # id -> the Me.Account field (first wins)
-        for field in ("UserId", "Id"):
-            value = account.get(field)
-            if isinstance(value, int) and not isinstance(value, bool) and value > 0:
-                numeric_ids.setdefault(value, field)
+        if isinstance(me_resp.account.user_id, int) and not isinstance(me_resp.account.user_id, bool) and me_resp.account.user_id > 0:
+            numeric_ids.setdefault(me_resp.account.user_id, "UserId")
+        if isinstance(me_resp.account.id, int) and not isinstance(me_resp.account.id, bool) and me_resp.account.id > 0:
+            numeric_ids.setdefault(me_resp.account.id, "Id")
         for numeric_id, field in numeric_ids.items():
             user_record = await self._async_probe(self._client.async_get_user(numeric_id))
             add(collect_lid_user_identifiers(user_record), f"Users/{field}")
@@ -2715,8 +2768,10 @@ class LibrusDataUpdateCoordinator(DataUpdateCoordinator[LibrusData]):
             if self._login_count != seen:
                 return
             self._last_forced_login_at = dt_util.utcnow()
-            await self._client.async_ensure_session_valid(
-                self.config_entry.data[CONF_PASSWORD], force=True
+            await async_retry_with_backoff(
+                lambda: self._client.async_ensure_session_valid(
+                    self.config_entry.data[CONF_PASSWORD], force=True
+                )
             )
             self._login_count += 1
 
@@ -2743,14 +2798,18 @@ class LibrusDataUpdateCoordinator(DataUpdateCoordinator[LibrusData]):
         assert self.config_entry is not None
         seen = self._login_count
         try:
-            payload = await self._client.async_get_message(mailbox, message_id)
+            payload = await async_retry_with_backoff(
+                lambda: self._client.async_get_message(mailbox, message_id)
+            )
         except LibrusSessionExpiredError:
             async with self._login_lock:
                 await self._async_relogin(seen)
                 self._messages_bootstrapped = False
                 self._messages_available = await self._client.async_bootstrap_messages()
                 self._messages_bootstrapped = True
-                payload = await self._client.async_get_message(mailbox, message_id)
+                payload = await async_retry_with_backoff(
+                    lambda: self._client.async_get_message(mailbox, message_id)
+                )
         # Opening a message marks it read, so this mailbox's cached list now
         # shows it unread. The unread count falls too and would trigger a
         # refetch anyway, but not when another message arrived meanwhile -
@@ -2903,7 +2962,7 @@ class LibrusDataUpdateCoordinator(DataUpdateCoordinator[LibrusData]):
                 # user can check before trying again.
                 await self._async_refresh_outbox()
             raise
-        except (LibrusError, HomeAssistantError, TimeoutError, OSError, ValueError, TypeError):
+        except (asyncio.CancelledError, LibrusError, HomeAssistantError, TimeoutError, OSError, ValueError, TypeError):
             self._forget_mailbox_list("outbox")
             raise
         await self._async_refresh_outbox()
@@ -3951,7 +4010,7 @@ class LibrusDataUpdateCoordinator(DataUpdateCoordinator[LibrusData]):
             CONF_DESCRIPTIVE_GRADES_ENABLED, DEFAULT_DESCRIPTIVE_GRADES_ENABLED
         )
 
-        me_payload = await self._client.async_get_me()
+        me_payload = await async_retry_with_backoff(self._client.async_get_me)
 
         gathered_labels = [
             label for label in OPTIONAL_ENDPOINT_LABELS if label not in _COMMENT_SOURCES
@@ -4491,8 +4550,14 @@ class LibrusDataUpdateCoordinator(DataUpdateCoordinator[LibrusData]):
         # Also by LID (`AccountId`) - the new descriptive grading names its
         # teachers that way, like the kindergarten timetable. A new dict (see
         # _apply_kindergarten_payloads).
+        teachers_dict = {
+            t.id: t.full_name
+            for t in parse_teacher_responses(payload("Teachers"))
+            if t.id and t.full_name
+        }
         self._cached_teachers = {
             **parse_id_name_map(payload("Teachers"), ("Users", "Teachers")),
+            **teachers_dict,
             **parse_kindergarten_teachers(payload("Teachers")),
         }
         if payload("GradingSystem"):
@@ -4804,14 +4869,18 @@ class LibrusDataUpdateCoordinator(DataUpdateCoordinator[LibrusData]):
         assert self.config_entry is not None
         seen = self._login_count
         try:
-            return await self._client.async_download_message_attachment(attachment_id, message_id)
+            return await async_retry_with_backoff(
+                lambda: self._client.async_download_message_attachment(attachment_id, message_id)
+            )
         except LibrusSessionExpiredError:
             async with self._login_lock:
                 await self._async_relogin(seen)
                 self._messages_bootstrapped = False
                 self._messages_available = await self._client.async_bootstrap_messages()
                 self._messages_bootstrapped = True
-                return await self._client.async_download_message_attachment(attachment_id, message_id)
+                return await async_retry_with_backoff(
+                    lambda: self._client.async_download_message_attachment(attachment_id, message_id)
+                )
 
     async def async_download_homework_attachment(self, attachment_id: str) -> Any:
         """Download one homework-assignment attachment for the attachment
@@ -4820,10 +4889,14 @@ class LibrusDataUpdateCoordinator(DataUpdateCoordinator[LibrusData]):
         assert self.config_entry is not None
         seen = self._login_count
         try:
-            return await self._client.async_download_homework_attachment(attachment_id)
+            return await async_retry_with_backoff(
+                lambda: self._client.async_download_homework_attachment(attachment_id)
+            )
         except LibrusSessionExpiredError:
             await self._async_relogin(seen)
-            return await self._client.async_download_homework_attachment(attachment_id)
+            return await async_retry_with_backoff(
+                lambda: self._client.async_download_homework_attachment(attachment_id)
+            )
 
     async def async_download_school_file(self, file_id: str) -> Any:
         """Download one school document (by its SchoolFiles id) for the
@@ -4838,10 +4911,14 @@ class LibrusDataUpdateCoordinator(DataUpdateCoordinator[LibrusData]):
             )
         seen = self._login_count
         try:
-            return await self._client.async_download_school_file(path)
+            return await async_retry_with_backoff(
+                lambda: self._client.async_download_school_file(path)
+            )
         except LibrusSessionExpiredError:
             await self._async_relogin(seen)
-            return await self._client.async_download_school_file(path)
+            return await async_retry_with_backoff(
+                lambda: self._client.async_download_school_file(path)
+            )
 
     async def _async_get_justifications(self) -> list[JustificationData]:
         """The parent's submitted absence justifications, at most once an
@@ -5302,7 +5379,10 @@ class LibrusDataUpdateCoordinator(DataUpdateCoordinator[LibrusData]):
         # messages are fetched) - `self.data` is still None on the first
         # refresh after a restart, when receipts saved before it can already
         # fire events.
-        student = parse_me(self._last_good.get("Me") or {}).display_name
+        student = (
+            MeResponse.from_dict(self._last_good.get("Me") or {}).student_name
+            or parse_me(self._last_good.get("Me") or {}).display_name
+        )
         for message, payload in zip(due, results, strict=True):
             if isinstance(payload, BaseException):
                 if not isinstance(payload, LibrusError):

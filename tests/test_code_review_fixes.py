@@ -6,25 +6,35 @@ import ast
 import asyncio
 import logging
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from homeassistant import config_entries
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.data_entry_flow import FlowResultType
-from homeassistant.exceptions import HomeAssistantError
+from librus_synergia.exceptions import (
+    LibrusAccountActionRequiredError,
+    LibrusConnectionError,
+    LibrusInvalidCredentialsError,
+    LibrusUnexpectedResponseError,
+)
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.librus_synergia.const import DOMAIN
+from custom_components.librus_synergia.coordinator import (
+    parse_attendance_responses,
+    parse_grade_responses,
+    parse_lesson_responses,
+    parse_teacher_responses,
+    wrap_api_response,
+)
 from custom_components.librus_synergia.models import (
-    AccountInfo,
     ApiResponse,
     AttendanceResponse,
     GradeResponse,
     LessonResponse,
     MeResponse,
     TeacherResponse,
-    UserInfo,
 )
 from custom_components.librus_synergia.retry import async_retry_with_backoff
 from custom_components.librus_synergia.security import (
@@ -32,14 +42,6 @@ from custom_components.librus_synergia.security import (
     SessionLock,
     sanitize_payload,
     validate_csrf_token,
-)
-from librus_synergia.client import LibrusSessionData
-from librus_synergia.exceptions import (
-    LibrusAccountActionRequiredError,
-    LibrusCaptchaRequiredError,
-    LibrusConnectionError,
-    LibrusInvalidCredentialsError,
-    LibrusUnexpectedResponseError,
 )
 
 from .conftest import build_mock_client
@@ -107,6 +109,15 @@ def test_validate_csrf_token_failure(invalid_token: str | None) -> None:
         validate_csrf_token(invalid_token)
 
 
+def test_validate_csrf_token_with_session_secret() -> None:
+    """Ensure CSRF tokens are matched against session secret."""
+    secret = "aB3_cD9-eF012345"
+    assert validate_csrf_token(secret, session_secret=secret) == secret
+
+    with pytest.raises(LibrusUnexpectedResponseError, match="CSRF token does not match session secret"):
+        validate_csrf_token(secret, session_secret="different_secret_999")
+
+
 # 3) Session Management Locking Tests
 @pytest.mark.asyncio
 async def test_session_lock_serializes_concurrent_tasks() -> None:
@@ -129,6 +140,35 @@ async def test_session_lock_serializes_concurrent_tasks() -> None:
         ["task1_start", "task1_end", "task2_start", "task2_end"],
         ["task2_start", "task2_end", "task1_start", "task1_end"],
     )
+
+
+@pytest.mark.asyncio
+async def test_session_lock_handles_none_current_task() -> None:
+    """Ensure SessionLock works correctly when asyncio.current_task() is None."""
+    lock = SessionLock()
+    with patch("asyncio.current_task", return_value=None):
+        assert not lock.locked
+        async with lock:
+            assert lock.locked
+        assert not lock.locked
+
+        # Release when unlocked does not raise
+        lock.release()
+
+
+@pytest.mark.asyncio
+async def test_session_lock_none_current_task_release_conflict() -> None:
+    """Ensure releasing lock owned by another task raises RuntimeError."""
+    lock = SessionLock()
+    await lock.acquire()  # Acquired with real task
+    try:
+        with (
+            patch("asyncio.current_task", return_value=None),
+            pytest.raises(RuntimeError, match="Cannot release lock owned by another task"),
+        ):
+            lock.release()
+    finally:
+        lock.release()
 
 
 # 4) Specific Exceptions Tests (AST inspection)
@@ -300,10 +340,126 @@ async def test_coordinator_async_start_reauth(hass) -> None:
     entry.add_to_hass(hass)
     client = build_mock_client()
 
-    from custom_components.librus_synergia.coordinator import LibrusDataUpdateCoordinator
     from datetime import timedelta
+
+    from custom_components.librus_synergia.coordinator import (
+        LibrusDataUpdateCoordinator,
+    )
 
     coordinator = LibrusDataUpdateCoordinator(hass, entry, client, timedelta(minutes=15))
     with patch.object(entry, "async_start_reauth") as mock_start:
         coordinator.async_start_reauth()
         mock_start.assert_called_once_with(hass)
+
+
+@pytest.mark.asyncio
+async def test_attachment_view_csrf_validation_mandatory(hass, hass_client) -> None:
+    """Ensure CSRF validation is mandatory on attachment endpoints."""
+    from homeassistant.helpers import device_registry as dr
+    from librus_synergia.models import AttachmentFileData
+
+    from tests.test_topics_trips_documents import setup_integration
+
+    client = build_mock_client()
+    client.async_download_message_attachment.return_value = AttachmentFileData(
+        filename="test.pdf", content_type="application/pdf", content=b"%PDF"
+    )
+    entry = await setup_integration(hass, client)
+    device = dr.async_get(hass).async_get_device_by_identifier((DOMAIN, entry.entry_id), entry.entry_id)
+    http = await hass_client()
+
+    # 1. Missing CSRF header -> 403 Forbidden
+    resp = await http.get(f"/api/{DOMAIN}/attachment/{device.id}/99/55")
+    assert resp.status == 403
+
+    # 2. Invalid / mismatched CSRF token -> 403 Forbidden
+    resp_invalid = await http.get(
+        f"/api/{DOMAIN}/attachment/{device.id}/99/55",
+        headers={"X-CSRF-Token": "invalid_token_12345"},
+    )
+    assert resp_invalid.status == 403
+
+    # 3. Valid CSRF token matching session secret -> 200 OK
+    resp_valid = await http.get(
+        f"/api/{DOMAIN}/attachment/{device.id}/99/55",
+        headers={"X-CSRF-Token": entry.runtime_data.session_secret},
+    )
+    assert resp_valid.status == 200
+
+
+def test_coordinator_exception_tuples_include_cancelled_error() -> None:
+    """Verify that coordinator message send catches asyncio.CancelledError."""
+    import inspect
+
+    from custom_components.librus_synergia.coordinator import (
+        LibrusDataUpdateCoordinator,
+    )
+
+    source = inspect.getsource(LibrusDataUpdateCoordinator.async_send_message)
+    assert "asyncio.CancelledError" in source
+
+
+def test_coordinator_parsers_use_dataclass_models() -> None:
+    """Verify coordinator parser helpers use models.py dataclasses."""
+    grades_payload = {
+        "Grades": [
+            {"Id": 1, "Grade": "5", "Weight": 2.0, "Category": {"Id": 10}, "Subject": {"Id": 20}}
+        ]
+    }
+    parsed_grades = parse_grade_responses(grades_payload)
+    assert len(parsed_grades) == 1
+    assert isinstance(parsed_grades[0], GradeResponse)
+    assert parsed_grades[0].grade == "5"
+
+    timetable_payload = {
+        "Timetable": {
+            "2026-11-06": [{"Id": 101, "LessonNo": 1, "Subject": {"Id": 20}}]
+        }
+    }
+    parsed_lessons = parse_lesson_responses(timetable_payload)
+    assert len(parsed_lessons) == 1
+    assert isinstance(parsed_lessons[0], LessonResponse)
+    assert parsed_lessons[0].id == 101
+
+    attendances_payload = {
+        "Attendances": [{"Id": 201, "LessonNo": 1, "Type": {"Id": 2}}]
+    }
+    parsed_attendances = parse_attendance_responses(attendances_payload)
+    assert len(parsed_attendances) == 1
+    assert isinstance(parsed_attendances[0], AttendanceResponse)
+    assert parsed_attendances[0].id == 201
+
+    teachers_payload = {
+        "Teachers": [{"Id": 301, "FirstName": "Anna", "LastName": "Nowak"}]
+    }
+    parsed_teachers = parse_teacher_responses(teachers_payload)
+    assert len(parsed_teachers) == 1
+    assert isinstance(parsed_teachers[0], TeacherResponse)
+    assert parsed_teachers[0].full_name == "Anna Nowak"
+
+    wrapped = wrap_api_response(parsed_grades)
+    assert isinstance(wrapped, ApiResponse)
+    assert wrapped.data == parsed_grades
+
+
+@pytest.mark.asyncio
+async def test_coordinator_retry_wired(hass) -> None:
+    """Verify coordinator relogin uses retry with backoff."""
+    from datetime import timedelta
+
+    from custom_components.librus_synergia.coordinator import (
+        LibrusDataUpdateCoordinator,
+    )
+
+    user_input = {CONF_USERNAME: "1234567u", CONF_PASSWORD: "pw"}
+    entry = MockConfigEntry(domain=DOMAIN, unique_id="1234567", data=user_input)
+    entry.add_to_hass(hass)
+    client = build_mock_client()
+
+    coordinator = LibrusDataUpdateCoordinator(hass, entry, client, timedelta(minutes=15))
+    with patch(
+        "custom_components.librus_synergia.coordinator.async_retry_with_backoff",
+        wraps=async_retry_with_backoff,
+    ) as mock_retry:
+        await coordinator._async_relogin(seen=0)
+        assert mock_retry.called

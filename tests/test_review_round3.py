@@ -269,11 +269,12 @@ async def test_attachment_view_rejects_odd_ids_and_hides_librus_errors(hass, has
     assert odd.status == 404
     client.async_download_message_attachment.assert_not_called()
 
-    failed = await http.get(f"/api/{DOMAIN}/attachment/{device.id}/99/55")
+    headers = {"X-CSRF-Token": entry.runtime_data.session_secret}
+    failed = await http.get(f"/api/{DOMAIN}/attachment/{device.id}/99/55", headers=headers)
     assert failed.status == 502
     assert "secret upstream detail" not in await failed.text()
 
-    ok = await http.get(f"/api/{DOMAIN}/homework_attachment/{device.id}/31")
+    ok = await http.get(f"/api/{DOMAIN}/homework_attachment/{device.id}/31", headers=headers)
     assert ok.status == 200
     assert ok.headers["X-Content-Type-Options"] == "nosniff"
     assert "\r" not in ok.headers["Content-Disposition"]

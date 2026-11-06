@@ -56,7 +56,7 @@ from librus_synergia import (
 )
 
 from .models import MeResponse
-from .security import sanitize_payload, validate_csrf_token
+from .retry import async_retry_with_backoff
 
 from .subject_names import category_key, parse_category_names
 from .const import (
@@ -217,12 +217,12 @@ class LibrusSynergiaConfigFlow(ConfigFlow, domain=DOMAIN):
         session = async_create_clientsession(self.hass)
         try:
             client = LibrusApiClient(session, username)
-            session_data = await client.async_login(password)
+            session_data = await async_retry_with_backoff(lambda: client.async_login(password))
 
             title = username
             unique_id = username.lower()
             try:
-                me_payload = await client.async_get_me()
+                me_payload = await async_retry_with_backoff(client.async_get_me)
                 me_resp = MeResponse.from_dict(me_payload)
                 if me_resp.display_title:
                     title = me_resp.display_title
