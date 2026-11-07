@@ -17,7 +17,7 @@ import copy
 import dataclasses
 import logging
 import re
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable
 from datetime import date, datetime, time, timedelta
 from functools import partial
 from typing import TYPE_CHECKING, Any, TypeVar
@@ -5344,6 +5344,8 @@ class LibrusDataUpdateCoordinator(DataUpdateCoordinator[LibrusData]):
                 if not isinstance(payload, LibrusError):
                     raise payload
                 _LOGGER.debug("Read receipts fetch failed (non-fatal)", exc_info=payload)
+                continue
+            if not isinstance(payload, dict):
                 continue
             full = parse_message(payload, "outbox", message.id)
             if full is None:

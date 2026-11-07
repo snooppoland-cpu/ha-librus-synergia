@@ -1313,3 +1313,45 @@ async def test_weekly_summary_catches_aiohttp_client_error(hass) -> None:
     assert coordinator.weekly_summary.last_error == "Cannot connect to AI service host"
 
 
+def test_classvar_annotations() -> None:
+    """Verify ClassVar typing annotations on forecast._ALL."""
+    from custom_components.librus_synergia.forecast import DataMemo
+
+    assert "ClassVar" in str(DataMemo.__annotations__["_ALL"])
+
+
+def test_attachment_view_file_response_csp() -> None:
+    """Verify Content-Security-Policy header in _file_response."""
+    from unittest.mock import MagicMock
+    from custom_components.librus_synergia.attachment_view import _file_response
+
+    mock_file = MagicMock()
+    mock_file.filename = "test.pdf"
+    mock_file.content = b"content"
+    mock_file.content_type = "application/pdf"
+
+    resp = _file_response(mock_file, "fallback.pdf")
+    assert resp.headers.get("Content-Security-Policy") == "default-src 'none'; sandbox"
+
+
+@pytest.mark.asyncio
+async def test_coordinator_read_receipts_handles_non_dict_payload(hass) -> None:
+    """Verify _async_refresh_read_receipts defensively ignores non-dict payloads."""
+    from custom_components.librus_synergia.coordinator import LibrusDataUpdateCoordinator
+    from librus_synergia.models import MessageData
+    from tests.test_topics_trips_documents import setup_integration
+
+    client = build_mock_client()
+    entry = await setup_integration(hass, client)
+    coordinator: LibrusDataUpdateCoordinator = entry.runtime_data
+
+    sent_msg = MessageData(
+        "msg_non_dict", "Sender", "Topic", "Content", "2026-11-01T10:00:00", None, False
+    )
+    client.async_get_message.return_value = "invalid-payload-not-a-dict"
+
+    await coordinator._async_refresh_read_receipts([sent_msg])
+    assert "msg_non_dict" not in coordinator.read_receipts
+
+
+
