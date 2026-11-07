@@ -7,6 +7,7 @@ import asyncio
 from datetime import timedelta
 import logging
 from pathlib import Path
+import sys
 from unittest.mock import patch
 
 import pytest
@@ -307,6 +308,75 @@ def test_credential_filter_sanitizes_record_exc_text() -> None:
     assert cred_filter.filter(rec2) is True
     assert rec2.exc_text is None
 
+    # exc_info is present, exc_text is None initially (use Formatter.formatException)
+    try:
+        raise ValueError("Failed auth with password='secret_pwd' cookies='cookie_val' authorization=auth_token_val")
+    except ValueError:
+        rec3 = logging.LogRecord(
+            name="test_logger",
+            level=logging.ERROR,
+            pathname="test.py",
+            lineno=42,
+            msg="Exception during request",
+            args=(),
+            exc_info=sys.exc_info(),
+        )
+
+    assert rec3.exc_text is None
+    assert cred_filter.filter(rec3) is True
+    assert rec3.exc_text is not None
+    assert "secret_pwd" not in rec3.exc_text
+    assert "cookie_val" not in rec3.exc_text
+    assert "auth_token_val" not in rec3.exc_text
+    assert "password='***REDACTED***'" in rec3.exc_text
+    assert "cookies='***REDACTED***'" in rec3.exc_text
+    assert "authorization=***REDACTED***" in rec3.exc_text
+
+    # Formatter output also redacts traceback
+    formatter = logging.Formatter()
+    formatted_msg = formatter.format(rec3)
+    assert "secret_pwd" not in formatted_msg
+    assert "cookie_val" not in formatted_msg
+    assert "auth_token_val" not in formatted_msg
+
+
+def test_credential_filter_covers_cookies_and_authorization() -> None:
+    """Ensure CredentialFilter handles cookies and authorization with proper word boundaries."""
+    cred_filter = CredentialFilter()
+
+    # Quoted and unquoted cookies
+    rec1 = logging.LogRecord(
+        "test", logging.INFO, "t.py", 1,
+        'cookies="sess_1" cookies=\'sess_2\' cookies=sess_3 cookies: sess_4',
+        (), None,
+    )
+    cred_filter.filter(rec1)
+    assert rec1.msg == (
+        'cookies="***REDACTED***" cookies=\'***REDACTED***\' '
+        'cookies=***REDACTED*** cookies: ***REDACTED***'
+    )
+
+    # Quoted and unquoted authorization
+    rec2 = logging.LogRecord(
+        "test", logging.INFO, "t.py", 1,
+        'authorization="tok_1" authorization=\'tok_2\' authorization=tok_3 authorization: tok_4',
+        (), None,
+    )
+    cred_filter.filter(rec2)
+    assert rec2.msg == (
+        'authorization="***REDACTED***" authorization=\'***REDACTED***\' '
+        'authorization=***REDACTED*** authorization: ***REDACTED***'
+    )
+
+    # Word boundaries: authorized, cookies_jar, author should not be redacted
+    rec3 = logging.LogRecord(
+        "test", logging.INFO, "t.py", 1,
+        'authorized=True, cookies_jar=5, author="Adam", passed=True',
+        (), None,
+    )
+    cred_filter.filter(rec3)
+    assert rec3.msg == 'authorized=True, cookies_jar=5, author="Adam", passed=True'
+
 
 # 3) Session Management Locking Tests
 @pytest.mark.asyncio
@@ -330,6 +400,14 @@ async def test_session_lock_serializes_concurrent_tasks() -> None:
         ["task1_start", "task1_end", "task2_start", "task2_end"],
         ["task2_start", "task2_end", "task1_start", "task1_end"],
     )
+
+
+@pytest.mark.asyncio
+async def test_session_lock_aenter_returns_self() -> None:
+    """Ensure SessionLock.__aenter__ returns self."""
+    lock = SessionLock()
+    async with lock as ctx:
+        assert ctx is lock
 
 
 @pytest.mark.asyncio

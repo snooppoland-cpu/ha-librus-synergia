@@ -6,8 +6,11 @@ import asyncio
 import contextvars
 import logging
 import re
+import sys
 from collections.abc import Mapping
-from typing import Any
+from logging import Formatter
+from types import TracebackType
+from typing import Any, Self
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -37,27 +40,27 @@ REDACTED = "***REDACTED***"
 CREDENTIAL_PATTERNS: tuple[tuple[str, str], ...] = (
     # Authorization: Bearer in dict/JSON quotes
     (
-        r"(\bAuthorization['\"]?\s*:\s*['\"]Bearer\s+)([^'\"]*?)(['\"])",
+        r"(\bAuthorization\b['\"]?\s*:\s*['\"]Bearer\s+)([^'\"]*?)(['\"])",
         r"\g<1>***REDACTED***\g<3>",
     ),
     # Authorization: Bearer with quoted token
     (
-        r"(\bAuthorization\s*:\s*Bearer\s+)(['\"])[^'\"]*?\2",
+        r"(\bAuthorization\b['\"]?\s*:\s*Bearer\s+)(['\"])[^'\"]*?\2",
         r"\g<1>\g<2>***REDACTED***\g<2>",
     ),
     # Authorization: Bearer unquoted
     (
-        r"(\bAuthorization\s*:\s*Bearer\s+)(?!['\"])([^\s,;&'\")\]\}]+)",
+        r"(\bAuthorization\b['\"]?\s*:\s*Bearer\s+)(?!['\"])([^\s,;&'\")\]\}]+)",
         r"\g<1>***REDACTED***",
     ),
     # Key-value credential patterns (quoted values)
     (
-        r"(\b(?:access_token|refresh_token|client_secret|password|pass|token|cookie|secret|auth|csrf_token|_csrf|csrf)['\"]?\s*[:=]\s*)(['\"])[^'\"]*?\2",
+        r"(\b(?:access_token|refresh_token|client_secret|password|pass|token|cookies|cookie|authorization|secret|auth|csrf_token|_csrf|csrf)\b['\"]?\s*[:=]\s*)(['\"])(?!Bearer\b)[^'\"]*?\2",
         r"\g<1>\g<2>***REDACTED***\g<2>",
     ),
     # Key-value credential patterns (unquoted values)
     (
-        r"(\b(?:access_token|refresh_token|client_secret|password|pass|token|cookie|secret|auth|csrf_token|_csrf|csrf)['\"]?\s*[:=]\s*)(?!['\"])([^\s,;&'\")\]\}]+)",
+        r"(\b(?:access_token|refresh_token|client_secret|password|pass|token|cookies|cookie|authorization|secret|auth|csrf_token|_csrf|csrf)\b['\"]?\s*[:=]\s*)(?!['\"]|Bearer\b)([^\s,;&'\")\]\}]+)",
         r"\g<1>***REDACTED***",
     ),
 )
@@ -104,6 +107,9 @@ def sanitize_payload(payload: Any) -> Any:
     return payload
 
 
+_DEFAULT_FORMATTER = Formatter()
+
+
 class CredentialFilter(logging.Filter):
     """Logging filter ensuring auth payloads and credentials are never emitted in logs."""
 
@@ -123,6 +129,17 @@ class CredentialFilter(logging.Filter):
             rendered = str(record.msg)
         record.msg = _sanitize_string(rendered)
         record.args = None
+        if record.exc_info and not getattr(record, "exc_text", None):
+            try:
+                exc_info = record.exc_info
+                if isinstance(exc_info, BaseException):
+                    exc_info = (type(exc_info), exc_info, exc_info.__traceback__)
+                elif not isinstance(exc_info, tuple):
+                    exc_info = sys.exc_info()
+                if exc_info and exc_info[0] is not None:
+                    record.exc_text = Formatter.formatException(_DEFAULT_FORMATTER, exc_info)
+            except Exception:  # noqa: BLE001, S110
+                pass
         if getattr(record, "exc_text", None):
             record.exc_text = _sanitize_string(str(record.exc_text))
         return True
@@ -247,9 +264,14 @@ class SessionLock:
             self._owner = _UNOWNED
             self._lock.release()
 
-    async def __aenter__(self) -> SessionLock:
+    async def __aenter__(self) -> Self:
         await self.acquire()
         return self
 
-    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         self.release()
