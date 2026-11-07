@@ -123,8 +123,10 @@ SECTIONS: dict[str, str] = {
 # Only when the user opted in to sending messages/announcements.
 NEWS_SECTION = (
     "school_news",
-    "From the school: the important points of this week's private messages and"
-    " announcements (meetings, trips, payments, deadlines). Skip newsletters and noise.",
+    (
+        "From the school: the important points of this week's private messages and"
+        " announcements (meetings, trips, payments, deadlines). Skip newsletters and noise."
+    ),
 )
 
 

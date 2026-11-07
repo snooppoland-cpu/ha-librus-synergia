@@ -20,7 +20,7 @@ from collections import OrderedDict
 from collections.abc import Callable, Hashable, Mapping
 from dataclasses import dataclass
 from datetime import date, timedelta
-from typing import Any, TypeVar
+from typing import Any, ClassVar, TypeVar
 
 from librus_synergia.models import (
     GradeCategoryData,
@@ -61,7 +61,7 @@ class DataMemo:
 
     # Every memo, so an unloading entry can drop its slots from all of them
     # at once (`discard_all`).
-    _ALL: weakref.WeakSet[DataMemo] = weakref.WeakSet()
+    _ALL: ClassVar[weakref.WeakSet[DataMemo]] = weakref.WeakSet()
 
     def __init__(self, size: int = 16) -> None:
         self._size = size

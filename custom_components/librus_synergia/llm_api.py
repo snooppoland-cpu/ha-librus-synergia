@@ -96,8 +96,10 @@ def _result(data: dict[str, Any], *, error: bool = False) -> Any:
 
 _STUDENT_FIELD = (
     str,
-    "The student's first name. Only needed when more than one student is set up; "
-    "leave it out to get every student.",
+    (
+        "The student's first name. Only needed when more than one student is set up; "
+        "leave it out to get every student."
+    ),
 )
 
 
@@ -361,8 +363,10 @@ class GradesTool(_LibrusTool):
             "subject": (str, "Part of a subject name, e.g. 'matem' or 'angiel'."),
             "days": (
                 int,
-                "Only grades from the last N days. Defaults to the last "
-                f"{_DEFAULT_GRADE_DAYS} days, or the whole school year when a subject is given.",
+                (
+                    "Only grades from the last N days. Defaults to the last "
+                    f"{_DEFAULT_GRADE_DAYS} days, or the whole school year when a subject is given."
+                ),
             ),
             "student": _STUDENT_FIELD,
         }

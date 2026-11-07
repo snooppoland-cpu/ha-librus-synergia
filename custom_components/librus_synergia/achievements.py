@@ -358,10 +358,10 @@ def compute_badges(
         if g.subject_id is None or scales is None:
             continue
         thresholds = scales.for_subject(g.subject_id)
-        prefix = by_point_subject[g.subject_id]
-        prefix.append(g)
-        percentage = point_grades_percentage(prefix)
-        if thresholds is None or percentage is None or len(prefix) < SUBJECT_STAR_MIN_GRADES:
+        point_prefix = by_point_subject[g.subject_id]
+        point_prefix.append(g)
+        percentage = point_grades_percentage(point_prefix)
+        if thresholds is None or percentage is None or len(point_prefix) < SUBJECT_STAR_MIN_GRADES:
             continue
         grade = predicted_grade(percentage, thresholds)
         if grade >= SUBJECT_STAR_AVERAGE and "subject_star" not in star.earned:
@@ -508,16 +508,16 @@ def compute_badges(
     _tiered(praises, praise_dates)
 
     exemplary = badge("exemplary_behaviour")
-    for grade in sorted(data.behaviour_grades, key=lambda b: b.add_date or ""):
-        if grade.display.lower() in _EXEMPLARY_BEHAVIOUR:
-            exemplary.earned["exemplary_behaviour"] = (grade.add_date or "")[:10] or None
+    for behaviour_grade in sorted(data.behaviour_grades, key=lambda b: b.add_date or ""):
+        if behaviour_grade.display.lower() in _EXEMPLARY_BEHAVIOUR:
+            exemplary.earned["exemplary_behaviour"] = (behaviour_grade.add_date or "")[:10] or None
             break
 
     # --- other ------------------------------------------------------
     lucky = badge("lucky")
-    number = data.lucky_number
-    if number is not None and student_number is not None and number.number == student_number:
-        lucky.earned["lucky"] = (number.day or "")[:10] or None
+    lucky_record = data.lucky_number
+    if lucky_record is not None and student_number is not None and lucky_record.number == student_number:
+        lucky.earned["lucky"] = (lucky_record.day or "")[:10] or None
 
     homework = badge("homework", (10, 25), value=homework_done, unit="tasks")
     for tier in homework.tiers:

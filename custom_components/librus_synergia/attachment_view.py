@@ -66,6 +66,7 @@ def _file_response(file: Any, fallback_name: str) -> web.Response:
             # Served as a download, never sniffed into HTML/script by the
             # browser on Home Assistant's own origin.
             "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "default-src none; sandbox",
         },
     )
 
