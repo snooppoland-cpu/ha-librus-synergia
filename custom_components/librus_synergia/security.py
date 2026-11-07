@@ -33,6 +33,34 @@ SENSITIVE_KEYS = frozenset(
 REDACTED = "***REDACTED***"
 
 
+CREDENTIAL_PATTERNS: tuple[tuple[str, str], ...] = (
+    (
+        r"(\b(?:password|pass|token|cookie|secret|auth|csrf)['\"]?\s*[:=]\s*)(['\"])[^'\"]*?\2",
+        r"\g<1>\g<2>***REDACTED***\g<2>",
+    ),
+    (
+        r"(\b(?:password|pass|token|cookie|secret|auth|csrf)['\"]?\s*[:=]\s*)(?!['\"])([^\s,;&'\")\]\}]+)",
+        r"\g<1>***REDACTED***",
+    ),
+)
+
+
+def _sanitize_string(text: str) -> str:
+    """Sanitize sensitive credentials in a string using credential patterns."""
+    for pattern, repl in CREDENTIAL_PATTERNS:
+        text = re.sub(pattern, repl, text, flags=re.IGNORECASE)
+    return text
+
+
+def _sanitize_arg(arg: Any) -> Any:
+    """Sanitize an argument for logging."""
+    if isinstance(arg, str):
+        return _sanitize_string(arg)
+    if isinstance(arg, (Mapping, list, tuple)):
+        return sanitize_payload(arg)
+    return arg
+
+
 def sanitize_payload(payload: Any) -> Any:
     """Sanitize sensitive credentials from data structures before logging.
 
@@ -43,7 +71,7 @@ def sanitize_payload(payload: Any) -> Any:
         for key, value in payload.items():
             key_str = str(key).lower()
             if key_str in SENSITIVE_KEYS or any(
-                secret in key_str for secret in ("password", "secret", "token", "cookie", "auth", "csrf")
+                secret in key_str for secret in ("password", "secret", "token", "cookie", "csrf")
             ):
                 sanitized[str(key)] = REDACTED
             elif isinstance(value, (Mapping, list, tuple)):
@@ -63,24 +91,19 @@ class CredentialFilter(logging.Filter):
         if record.args:
             if isinstance(record.args, dict):
                 record.args = sanitize_payload(record.args)
-            elif isinstance(record.args, (list, tuple)):
-                record.args = tuple(sanitize_payload(arg) for arg in record.args)
+            elif isinstance(record.args, tuple):
+                record.args = tuple(_sanitize_arg(arg) for arg in record.args)
+            elif isinstance(record.args, list):
+                record.args = [_sanitize_arg(arg) for arg in record.args]
+            elif isinstance(record.args, str):
+                record.args = _sanitize_string(record.args)
         if isinstance(record.msg, str):
-            for pattern, repl in (
-                (
-                    r"(\b(?:password|pass)['\"]?\s*[:=]\s*)(['\"])[^'\"]*?\2",
-                    r"\g<1>\g<2>***REDACTED***\g<2>",
-                ),
-                (
-                    r"(\b(?:password|pass)['\"]?\s*[:=]\s*)(?!['\"])([^\s,;&'\")\]\}]+)",
-                    r"\g<1>***REDACTED***",
-                ),
-            ):
-                record.msg = re.sub(pattern, repl, record.msg, flags=re.IGNORECASE)
+            record.msg = _sanitize_string(record.msg)
         return True
 
 
 SUBMODULE_LOGGER_NAMES: tuple[str, ...] = (
+    "librus_synergia",
     "custom_components.librus_synergia",
     "custom_components.librus_synergia.absence_budget",
     "custom_components.librus_synergia.absence_days",
@@ -163,9 +186,7 @@ class SessionLock:
     async def acquire(self) -> None:
         """Acquire the session lock, supporting re-entrancy within the same task."""
         current = asyncio.current_task()
-        if (current is not None and self._owner is current) or (
-            current is None and self._owner is None and self._lock.locked()
-        ):
+        if current is not None and self._owner is current:
             self._count += 1
             return
         await self._lock.acquire()

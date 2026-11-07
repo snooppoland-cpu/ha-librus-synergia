@@ -63,24 +63,33 @@ def test_sanitize_payload_redacts_credentials() -> None:
 
 
 def test_sanitize_payload_substring_keys() -> None:
-    """Ensure cookie, auth, csrf keys are sanitized via substring search."""
+    """Ensure cookie, csrf, secret keys are sanitized via substring search, but auth is exact only."""
     payload = {
         "user_cookie_header": "cookie_val",
-        "client_auth_code": "auth_val",
         "custom_csrf_value": "csrf_val",
+        "my_secret_key": "secret_val",
         "normal_field": "safe",
+        "author": "John Doe",
+        "author_id": 42,
+        "auth": "secret_auth",
+        "authorization": "Bearer token",
     }
     sanitized = sanitize_payload(payload)
     assert sanitized["user_cookie_header"] == "***REDACTED***"
-    assert sanitized["client_auth_code"] == "***REDACTED***"
     assert sanitized["custom_csrf_value"] == "***REDACTED***"
+    assert sanitized["my_secret_key"] == "***REDACTED***"
     assert sanitized["normal_field"] == "safe"
+    assert sanitized["author"] == "John Doe"
+    assert sanitized["author_id"] == 42
+    assert sanitized["auth"] == "***REDACTED***"
+    assert sanitized["authorization"] == "***REDACTED***"
 
 
 def test_credential_filter_redacts_log_records() -> None:
-    """Ensure CredentialFilter strips sensitive credentials from log records."""
+    """Ensure CredentialFilter strips sensitive credentials from log records and string args."""
     cred_filter = CredentialFilter()
-    record = logging.LogRecord(
+    # Test dictionary in args
+    record1 = logging.LogRecord(
         name="test_logger",
         level=logging.DEBUG,
         pathname="test.py",
@@ -89,14 +98,40 @@ def test_credential_filter_redacts_log_records() -> None:
         args=({"pass": "supersecret", "username": "admin"},),
         exc_info=None,
     )
-    assert cred_filter.filter(record) is True
-    args = record.args if isinstance(record.args, dict) else record.args[0]
-    assert args["pass"] == "***REDACTED***"
-    assert args["username"] == "admin"
+    assert cred_filter.filter(record1) is True
+    args1 = record1.args if isinstance(record1.args, dict) else record1.args[0]
+    assert args1["pass"] == "***REDACTED***"
+    assert args1["username"] == "admin"
+
+    # Test string args in record.args (tuple, list, and single string)
+    record2 = logging.LogRecord(
+        name="test_logger",
+        level=logging.INFO,
+        pathname="test.py",
+        lineno=1,
+        msg="Request url: %s and header %s",
+        args=("https://librus.pl?token=supersecret123&cookie=abc456", "password=adminpass"),
+        exc_info=None,
+    )
+    assert cred_filter.filter(record2) is True
+    assert record2.args[0] == "https://librus.pl?token=***REDACTED***&cookie=***REDACTED***"
+    assert record2.args[1] == "password=***REDACTED***"
+
+    record3 = logging.LogRecord(
+        name="test_logger",
+        level=logging.INFO,
+        pathname="test.py",
+        lineno=1,
+        msg="Single string arg: %s",
+        args="secret=super_secret_val",
+        exc_info=None,
+    )
+    assert cred_filter.filter(record3) is True
+    assert record3.args == "secret=***REDACTED***"
 
 
 def test_credential_filter_regex_word_boundaries_and_unquoted() -> None:
-    """Ensure CredentialFilter regex respects word boundaries and scrubs unquoted values."""
+    """Ensure CredentialFilter regex covers token, cookie, secret, auth, csrf and respects word boundaries."""
     cred_filter = CredentialFilter()
 
     # Quoted values
@@ -104,19 +139,26 @@ def test_credential_filter_regex_word_boundaries_and_unquoted() -> None:
     cred_filter.filter(rec1)
     assert rec1.msg == 'Connecting with password="***REDACTED***"'
 
-    # Unquoted values
-    rec2 = logging.LogRecord("test", logging.INFO, "t.py", 1, "Connecting with password=supersecret status=ok", (), None)
+    # Unquoted values for password, token, cookie, secret, auth, csrf
+    rec2 = logging.LogRecord(
+        "test", logging.INFO, "t.py", 1,
+        "token=tok123 cookie=cook456 secret=sec789 auth: authval csrf=csrf999", (), None
+    )
     cred_filter.filter(rec2)
-    assert rec2.msg == "Connecting with password=***REDACTED*** status=ok"
+    assert rec2.msg == "token=***REDACTED*** cookie=***REDACTED*** secret=***REDACTED*** auth: ***REDACTED*** csrf=***REDACTED***"
 
-    rec3 = logging.LogRecord("test", logging.INFO, "t.py", 1, "pass: supersecret, user: admin", (), None)
+    # Quoted values for token, cookie, secret, auth, csrf
+    rec3 = logging.LogRecord(
+        "test", logging.INFO, "t.py", 1,
+        'token="tok123" cookie=\'cook456\' secret="sec789" auth: "authval" csrf=\'csrf999\'', (), None
+    )
     cred_filter.filter(rec3)
-    assert rec3.msg == "pass: ***REDACTED***, user: admin"
+    assert rec3.msg == 'token="***REDACTED***" cookie=\'***REDACTED***\' secret="***REDACTED***" auth: "***REDACTED***" csrf=\'***REDACTED***\''
 
-    # Word boundaries (should NOT redact non-password/pass words)
-    rec4 = logging.LogRecord("test", logging.INFO, "t.py", 1, 'compass: "north", bypass=123, passed=True', (), None)
+    # Word boundaries (should NOT redact non-credential words like compass, bypass, author, passed)
+    rec4 = logging.LogRecord("test", logging.INFO, "t.py", 1, 'compass: "north", bypass=123, passed=True, author="Adam"', (), None)
     cred_filter.filter(rec4)
-    assert rec4.msg == 'compass: "north", bypass=123, passed=True'
+    assert rec4.msg == 'compass: "north", bypass=123, passed=True, author="Adam"'
 
 
 # 3) Session Management Locking Tests
@@ -190,19 +232,16 @@ async def test_session_lock_reentrant_same_task() -> None:
 
 
 @pytest.mark.asyncio
-async def test_session_lock_reentrant_none_current_task() -> None:
-    """Ensure SessionLock supports re-entrant acquisition when current_task is None without deadlocking."""
+async def test_session_lock_no_reentrant_when_current_task_is_none() -> None:
+    """Ensure SessionLock does not allow re-entrant acquisition when current_task is None."""
     lock = SessionLock()
     with patch("asyncio.current_task", return_value=None):
-        assert not lock.locked
-        async with lock:
-            assert lock.locked
-            assert lock._count == 1
-            async with lock:
-                assert lock.locked
-                assert lock._count == 2
-            assert lock.locked
-            assert lock._count == 1
+        await lock.acquire()
+        assert lock.locked
+        assert lock._count == 1
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(lock.acquire(), timeout=0.05)
+        lock.release()
         assert not lock.locked
         assert lock._count == 0
 
@@ -288,6 +327,106 @@ async def test_retry_with_backoff_fails_non_retryable_immediately() -> None:
             initial_delay=0.01,
         )
     assert attempts == 1
+
+
+@pytest.mark.asyncio
+async def test_retry_with_backoff_exhaustion() -> None:
+    """Ensure retryable errors retry until max_retries is exhausted, then raise."""
+    attempts = 0
+
+    async def persistently_failing_operation() -> str:
+        nonlocal attempts
+        attempts += 1
+        raise LibrusConnectionError("Persistent network outage")
+
+    with pytest.raises(LibrusConnectionError, match="Persistent network outage"):
+        await async_retry_with_backoff(
+            persistently_failing_operation,
+            max_retries=3,
+            initial_delay=0.001,
+        )
+    assert attempts == 3
+
+
+@pytest.mark.asyncio
+async def test_retry_with_backoff_enforces_min_max_retries() -> None:
+    """Ensure max_retries = max(1, max_retries) executes at least once even if <= 0."""
+    attempts = 0
+
+    async def op() -> str:
+        nonlocal attempts
+        attempts += 1
+        return "ok"
+
+    result = await async_retry_with_backoff(op, max_retries=0)
+    assert result == "ok"
+    assert attempts == 1
+
+    attempts = 0
+    result_neg = await async_retry_with_backoff(op, max_retries=-5)
+    assert result_neg == "ok"
+    assert attempts == 1
+
+
+@pytest.mark.asyncio
+async def test_retry_with_backoff_client_response_error_status_filtering() -> None:
+    """Ensure ClientResponseError only retries 429 and 5xx, and fails immediately on 4xx."""
+    from unittest.mock import MagicMock
+    import aiohttp
+
+    # 404 Not Found should fail immediately on attempt 1
+    attempts_404 = 0
+
+    async def op_404() -> str:
+        nonlocal attempts_404
+        attempts_404 += 1
+        raise aiohttp.ClientResponseError(request_info=MagicMock(), history=(), status=404)
+
+    with pytest.raises(aiohttp.ClientResponseError) as exc_info:
+        await async_retry_with_backoff(op_404, max_retries=3, initial_delay=0.001)
+    assert exc_info.value.status == 404
+    assert attempts_404 == 1
+
+    # 401 Unauthorized should fail immediately on attempt 1
+    attempts_401 = 0
+
+    async def op_401() -> str:
+        nonlocal attempts_401
+        attempts_401 += 1
+        raise aiohttp.ClientResponseError(request_info=MagicMock(), history=(), status=401)
+
+    with pytest.raises(aiohttp.ClientResponseError) as exc_info:
+        await async_retry_with_backoff(op_401, max_retries=3, initial_delay=0.001)
+    assert exc_info.value.status == 401
+    assert attempts_401 == 1
+
+    # 429 Too Many Requests should be retried and succeed on attempt 2
+    attempts_429 = 0
+
+    async def op_429() -> str:
+        nonlocal attempts_429
+        attempts_429 += 1
+        if attempts_429 == 1:
+            raise aiohttp.ClientResponseError(request_info=MagicMock(), history=(), status=429)
+        return "rate_limited_then_ok"
+
+    res_429 = await async_retry_with_backoff(op_429, max_retries=3, initial_delay=0.001)
+    assert res_429 == "rate_limited_then_ok"
+    assert attempts_429 == 2
+
+    # 503 Service Unavailable should be retried and succeed on attempt 2
+    attempts_503 = 0
+
+    async def op_503() -> str:
+        nonlocal attempts_503
+        attempts_503 += 1
+        if attempts_503 == 1:
+            raise aiohttp.ClientResponseError(request_info=MagicMock(), history=(), status=503)
+        return "server_error_then_ok"
+
+    res_503 = await async_retry_with_backoff(op_503, max_retries=3, initial_delay=0.001)
+    assert res_503 == "server_error_then_ok"
+    assert attempts_503 == 2
 
 
 # 6) Data Models (Dataclasses) Tests
@@ -431,6 +570,74 @@ async def test_attachment_view_requires_auth(hass, hass_client, hass_client_no_a
     http = await hass_client()
     resp_valid = await http.get(f"/api/{DOMAIN}/attachment/{device.id}/99/55")
     assert resp_valid.status == 200
+
+
+@pytest.mark.asyncio
+async def test_homework_attachment_view(hass, hass_client, hass_client_no_auth) -> None:
+    """Ensure homework attachment view requires auth, validates ids, and streams file."""
+    from homeassistant.helpers import device_registry as dr
+    from librus_synergia.models import AttachmentFileData
+    from tests.test_topics_trips_documents import setup_integration
+
+    client = build_mock_client()
+    client.async_download_homework_attachment.return_value = AttachmentFileData(
+        filename="zadanie.pdf", content_type="application/pdf", content=b"%PDF-homework"
+    )
+    entry = await setup_integration(hass, client)
+    device = dr.async_get(hass).async_get_device_by_identifier((DOMAIN, entry.entry_id), entry.entry_id)
+
+    # 1. Unauthenticated -> 401
+    http_no_auth = await hass_client_no_auth()
+    resp_unauth = await http_no_auth.get(f"/api/{DOMAIN}/homework_attachment/{device.id}/42")
+    assert resp_unauth.status == 401
+
+    # 2. Authenticated -> 200 with file content
+    http = await hass_client()
+    resp_valid = await http.get(f"/api/{DOMAIN}/homework_attachment/{device.id}/42")
+    assert resp_valid.status == 200
+    assert await resp_valid.read() == b"%PDF-homework"
+    assert "zadanie.pdf" in resp_valid.headers["Content-Disposition"]
+    client.async_download_homework_attachment.assert_awaited_once_with("42")
+
+    # 3. Invalid ID -> 404
+    resp_invalid = await http.get(f"/api/{DOMAIN}/homework_attachment/{device.id}/invalid..id")
+    assert resp_invalid.status == 404
+
+
+@pytest.mark.asyncio
+async def test_school_file_view(hass, hass_client, hass_client_no_auth) -> None:
+    """Ensure school file view requires auth, validates ids, and streams file."""
+    from homeassistant.helpers import device_registry as dr
+    from librus_synergia.models import AttachmentFileData
+    from tests.test_topics_trips_documents import FILES, setup_integration
+
+    client = build_mock_client(async_get_school_files=FILES)
+    client.async_download_school_file.return_value = AttachmentFileData(
+        filename="Regulamin.pdf", content_type="application/pdf", content=b"%PDF-school"
+    )
+    entry = await setup_integration(hass, client)
+    device = dr.async_get(hass).async_get_device_by_identifier((DOMAIN, entry.entry_id), entry.entry_id)
+
+    # 1. Unauthenticated -> 401
+    http_no_auth = await hass_client_no_auth()
+    resp_unauth = await http_no_auth.get(f"/api/{DOMAIN}/school_file/{device.id}/17613")
+    assert resp_unauth.status == 401
+
+    # 2. Authenticated -> 200 with file content
+    http = await hass_client()
+    resp_valid = await http.get(f"/api/{DOMAIN}/school_file/{device.id}/17613")
+    assert resp_valid.status == 200
+    assert await resp_valid.read() == b"%PDF-school"
+    assert "Regulamin.pdf" in resp_valid.headers["Content-Disposition"]
+    client.async_download_school_file.assert_awaited_once_with("/pliki_szkoly/pobierz/1")
+
+    # 3. Invalid ID -> 404
+    resp_invalid = await http.get(f"/api/{DOMAIN}/school_file/{device.id}/invalid..id")
+    assert resp_invalid.status == 404
+
+    # 4. Unknown file ID -> 404
+    resp_unknown = await http.get(f"/api/{DOMAIN}/school_file/{device.id}/999")
+    assert resp_unknown.status == 404
 
 
 def test_coordinator_exception_tuples_include_cancelled_error() -> None:
@@ -609,9 +816,122 @@ def test_credential_filter_registered_on_all_submodule_loggers() -> None:
             isinstance(f, CredentialFilter) for f in logger.filters
         ), f"CredentialFilter not registered on {mod.__name__}._LOGGER"
 
+    assert "librus_synergia" in security.SUBMODULE_LOGGER_NAMES
+
     for name in security.SUBMODULE_LOGGER_NAMES:
         log = logging.getLogger(name)
         assert any(
             isinstance(f, CredentialFilter) for f in log.filters
         ), f"CredentialFilter not registered on {name}"
+
+
+# 7) Schema Rejection Fallback Tests
+def test_is_schema_error() -> None:
+    """Verify _is_schema_error detects ServiceValidationError and Invalid class names."""
+    from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+    from custom_components.librus_synergia.ai_summary import _is_schema_error
+
+    class Invalid(Exception):
+        pass
+
+    class SubInvalid(Invalid):
+        pass
+
+    assert _is_schema_error(ServiceValidationError("Schema validation error")) is True
+    assert _is_schema_error(Invalid("Invalid structure schema")) is True
+    assert _is_schema_error(SubInvalid("Invalid sub-schema")) is True
+    assert _is_schema_error(ValueError("Invalid argument")) is False
+    assert _is_schema_error(TypeError("Bad type")) is False
+    assert _is_schema_error(HomeAssistantError("Service failed")) is False
+
+
+@pytest.mark.asyncio
+async def test_weekly_summary_schema_rejection_fallback(hass) -> None:
+    """Verify weekly summary retries without structure when service raises ServiceValidationError."""
+    from homeassistant.core import SupportsResponse
+    from homeassistant.exceptions import ServiceValidationError
+    from custom_components.librus_synergia.const import (
+        CONF_AI_AUDIENCE,
+        CONF_AI_TASK_ENTITY,
+        CONF_AI_TIME,
+        CONF_AI_WEEKDAY,
+    )
+    from tests.test_topics_trips_documents import setup_integration
+
+    ai_options = {
+        CONF_AI_TASK_ENTITY: "ai_task.mock",
+        CONF_AI_AUDIENCE: "parent",
+        CONF_AI_WEEKDAY: "7",
+        CONF_AI_TIME: "18:00:00",
+    }
+    calls = []
+
+    async def _handler(call):
+        calls.append(dict(call.data))
+        if "structure" in call.data:
+            raise ServiceValidationError("Extra keys not allowed @ data['structure']")
+        return {
+            "data": {
+                "headline": "Spokojny tydzień",
+                "status": "ok",
+                "grades": "Brak nowych ocen.",
+                "grades_status": "ok",
+                "summary": "Wszystko w porządku.",
+            }
+        }
+
+    hass.services.async_register(
+        "ai_task", "generate_data", _handler, supports_response=SupportsResponse.ONLY
+    )
+
+    client = build_mock_client()
+    entry = await setup_integration(hass, client, options=ai_options)
+    coordinator = entry.runtime_data
+
+    await coordinator.weekly_summary.async_generate(wait=True)
+
+    assert len(calls) == 2
+    assert "structure" in calls[0]
+    assert "structure" not in calls[1]
+    assert coordinator.weekly_summary.results["parent"]["headline"] == "Spokojny tydzień"
+
+
+@pytest.mark.asyncio
+async def test_weekly_summary_non_schema_error_does_not_fallback(hass) -> None:
+    """Verify weekly summary does not retry when service raises non-schema errors."""
+    from homeassistant.core import SupportsResponse
+    from homeassistant.exceptions import HomeAssistantError
+    from custom_components.librus_synergia.const import (
+        CONF_AI_AUDIENCE,
+        CONF_AI_TASK_ENTITY,
+        CONF_AI_TIME,
+        CONF_AI_WEEKDAY,
+    )
+    from tests.test_topics_trips_documents import setup_integration
+
+    ai_options = {
+        CONF_AI_TASK_ENTITY: "ai_task.mock",
+        CONF_AI_AUDIENCE: "parent",
+        CONF_AI_WEEKDAY: "7",
+        CONF_AI_TIME: "18:00:00",
+    }
+    calls = []
+
+    async def _handler(call):
+        calls.append(dict(call.data))
+        raise HomeAssistantError("Model backend unreachable")
+
+    hass.services.async_register(
+        "ai_task", "generate_data", _handler, supports_response=SupportsResponse.ONLY
+    )
+
+    client = build_mock_client()
+    entry = await setup_integration(hass, client, options=ai_options)
+    coordinator = entry.runtime_data
+
+    with pytest.raises(HomeAssistantError, match="Model backend unreachable"):
+        await coordinator.weekly_summary.async_generate(wait=True)
+
+    assert len(calls) == 1
+    assert "structure" in calls[0]
 

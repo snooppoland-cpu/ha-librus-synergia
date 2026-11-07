@@ -43,6 +43,7 @@ async def async_retry_with_backoff(
     Retries transient connection, server maintenance, timeout, and network errors.
     Permanent errors (e.g. invalid credentials, captcha) fail immediately without retry.
     """
+    max_retries = max(1, max_retries)
     delay = initial_delay
     last_err: Exception | None = None
 
@@ -50,6 +51,10 @@ async def async_retry_with_backoff(
         try:
             return await func()
         except retryable_exceptions as err:
+            if isinstance(err, aiohttp.ClientResponseError):
+                status = getattr(err, "status", None)
+                if status is not None and status != 429 and not (500 <= status < 600):
+                    raise
             last_err = err
             if attempt >= max_retries:
                 _LOGGER.warning(
@@ -67,4 +72,6 @@ async def async_retry_with_backoff(
             )
             await asyncio.sleep(delay)
             delay = min(delay * backoff_factor, max_delay)
+    if last_err is not None:
+        raise last_err
 
