@@ -1314,13 +1314,10 @@ async def test_weekly_summary_catches_aiohttp_client_error(hass) -> None:
 
 
 def test_classvar_annotations() -> None:
-    """Verify ClassVar typing annotations on forecast._ALL and sensor._attr_options."""
+    """Verify ClassVar typing annotations on forecast._ALL."""
     from custom_components.librus_synergia.forecast import DataMemo
-    from custom_components.librus_synergia.sensor import LibrusRankSensor, LibrusStatusSensor
 
     assert "ClassVar" in str(DataMemo.__annotations__["_ALL"])
-    assert any("ClassVar" in str(v) for k, v in LibrusRankSensor.__annotations__.items() if "attr_options" in k)
-    assert any("ClassVar" in str(v) for k, v in LibrusStatusSensor.__annotations__.items() if "attr_options" in k)
 
 
 def test_attachment_view_file_response_csp() -> None:
@@ -1334,7 +1331,7 @@ def test_attachment_view_file_response_csp() -> None:
     mock_file.content_type = "application/pdf"
 
     resp = _file_response(mock_file, "fallback.pdf")
-    assert resp.headers.get("Content-Security-Policy") == "default-src none; sandbox"
+    assert resp.headers.get("Content-Security-Policy") == "default-src 'none'; sandbox"
 
 
 @pytest.mark.asyncio

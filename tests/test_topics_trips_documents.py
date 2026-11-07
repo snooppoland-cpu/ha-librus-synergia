@@ -221,7 +221,7 @@ async def test_attachment_view_streams_the_file(hass, hass_client) -> None:
     assert await response.read() == b"%PDF-1.4"
     assert response.headers["Content-Type"].startswith("application/pdf")
     assert "filename*=UTF-8''Plan%20lekcji%20%C4%85%C4%99.pdf" in response.headers["Content-Disposition"]
-    assert response.headers.get("Content-Security-Policy") == "default-src none; sandbox"
+    assert response.headers.get("Content-Security-Policy") == "default-src 'none'; sandbox"
     client.async_download_message_attachment.assert_awaited_once_with("55", "99")
 
     missing = await http.get(f"/api/{DOMAIN}/attachment/unknown-device/99/55")
