@@ -227,6 +227,87 @@ def test_credential_filter_regex_word_boundaries_and_unquoted() -> None:
     assert rec4.msg == 'compass: "north", bypass=123, passed=True, author="Adam"'
 
 
+def test_credential_filter_covers_csrf_token_and_underscore_csrf() -> None:
+    """Ensure CredentialFilter handles csrf_token and underscore-prefixed _csrf."""
+    cred_filter = CredentialFilter()
+
+    # Quoted and unquoted csrf_token and _csrf
+    rec1 = logging.LogRecord(
+        "test", logging.INFO, "t.py", 1,
+        'csrf_token="secret_csrf_1" _csrf=\'secret_csrf_2\' csrf_token=secret_csrf_3 _csrf=secret_csrf_4',
+        (), None,
+    )
+    cred_filter.filter(rec1)
+    assert rec1.msg == (
+        'csrf_token="***REDACTED***" _csrf=\'***REDACTED***\' '
+        'csrf_token=***REDACTED*** _csrf=***REDACTED***'
+    )
+
+    # In JSON string with quotes around key and value
+    rec2 = logging.LogRecord(
+        "test", logging.INFO, "t.py", 1,
+        '{"_csrf": "my_secret_token", "csrf_token": "another_secret"}',
+        (), None,
+    )
+    cred_filter.filter(rec2)
+    assert rec2.msg == '{"_csrf": "***REDACTED***", "csrf_token": "***REDACTED***"}'
+
+    # Underscore-prefixed keys and word boundaries (foo_csrf and test_csrf_token should NOT be redacted)
+    rec3 = logging.LogRecord(
+        "test", logging.INFO, "t.py", 1,
+        'foo_csrf=safe and test_csrf_token="safe_val" but _csrf="secret" and csrf_token=secret',
+        (), None,
+    )
+    cred_filter.filter(rec3)
+    assert rec3.msg == 'foo_csrf=safe and test_csrf_token="safe_val" but _csrf="***REDACTED***" and csrf_token=***REDACTED***'
+
+
+def test_credential_filter_sanitizes_record_exc_text() -> None:
+    """Ensure CredentialFilter sanitizes record.exc_text when present."""
+    cred_filter = CredentialFilter()
+
+    # exc_text present with sensitive credentials
+    rec1 = logging.LogRecord(
+        name="test_logger",
+        level=logging.ERROR,
+        pathname="test.py",
+        lineno=10,
+        msg="Error occurred during login",
+        args=(),
+        exc_info=None,
+    )
+    rec1.exc_text = (
+        "Traceback (most recent call last):\n"
+        "  File 'client.py', line 50, in login\n"
+        "ValueError: failed with password='secret_pwd' token=secret_token _csrf=secret_csrf csrf_token='secret_csrf_tok'\n"
+    )
+
+    assert cred_filter.filter(rec1) is True
+    assert rec1.exc_text is not None
+    assert "secret_pwd" not in rec1.exc_text
+    assert "secret_token" not in rec1.exc_text
+    assert "secret_csrf" not in rec1.exc_text
+    assert "secret_csrf_tok" not in rec1.exc_text
+    assert "password='***REDACTED***'" in rec1.exc_text
+    assert "token=***REDACTED***" in rec1.exc_text
+    assert "_csrf=***REDACTED***" in rec1.exc_text
+    assert "csrf_token='***REDACTED***'" in rec1.exc_text
+
+    # exc_text is None
+    rec2 = logging.LogRecord(
+        name="test_logger",
+        level=logging.INFO,
+        pathname="test.py",
+        lineno=11,
+        msg="Normal message",
+        args=(),
+        exc_info=None,
+    )
+    assert rec2.exc_text is None
+    assert cred_filter.filter(rec2) is True
+    assert rec2.exc_text is None
+
+
 # 3) Session Management Locking Tests
 @pytest.mark.asyncio
 async def test_session_lock_serializes_concurrent_tasks() -> None:
@@ -719,6 +800,36 @@ async def test_school_file_view(hass, hass_client, hass_client_no_auth) -> None:
     # 4. Unknown file ID -> 404
     resp_unknown = await http.get(f"/api/{DOMAIN}/school_file/{device.id}/999")
     assert resp_unknown.status == 404
+
+
+@pytest.mark.asyncio
+async def test_attachment_view_error_logging_redacts_credentials_via_filter(
+    hass, hass_client, caplog
+) -> None:
+    """Ensure attachment view relies on CredentialFilter to redact credentials in logged errors."""
+    from homeassistant.helpers import device_registry as dr
+    from tests.test_topics_trips_documents import setup_integration
+
+    client = build_mock_client()
+    client.async_download_message_attachment.side_effect = LibrusConnectionError(
+        "Download failed at https://synergia.librus.pl/file?cookie=secret_session_cookie&token=secret_dl_token&_csrf=secret_csrf"
+    )
+    entry = await setup_integration(hass, client)
+    device = dr.async_get(hass).async_get_device_by_identifier((DOMAIN, entry.entry_id), entry.entry_id)
+    http = await hass_client()
+
+    with caplog.at_level(logging.WARNING):
+        resp = await http.get(f"/api/{DOMAIN}/attachment/{device.id}/99/55")
+        assert resp.status == 502
+
+    log_text = caplog.text
+    assert "Attachment download failed" in log_text
+    assert "secret_session_cookie" not in log_text
+    assert "secret_dl_token" not in log_text
+    assert "secret_csrf" not in log_text
+    assert "cookie=***REDACTED***" in log_text
+    assert "token=***REDACTED***" in log_text
+    assert "_csrf=***REDACTED***" in log_text
 
 
 def test_coordinator_exception_tuples_include_cancelled_error() -> None:

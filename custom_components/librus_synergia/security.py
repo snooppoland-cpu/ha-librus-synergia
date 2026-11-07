@@ -52,12 +52,12 @@ CREDENTIAL_PATTERNS: tuple[tuple[str, str], ...] = (
     ),
     # Key-value credential patterns (quoted values)
     (
-        r"(\b(?:access_token|refresh_token|client_secret|password|pass|token|cookie|secret|auth|csrf)['\"]?\s*[:=]\s*)(['\"])[^'\"]*?\2",
+        r"(\b(?:access_token|refresh_token|client_secret|password|pass|token|cookie|secret|auth|csrf_token|_csrf|csrf)['\"]?\s*[:=]\s*)(['\"])[^'\"]*?\2",
         r"\g<1>\g<2>***REDACTED***\g<2>",
     ),
     # Key-value credential patterns (unquoted values)
     (
-        r"(\b(?:access_token|refresh_token|client_secret|password|pass|token|cookie|secret|auth|csrf)['\"]?\s*[:=]\s*)(?!['\"])([^\s,;&'\")\]\}]+)",
+        r"(\b(?:access_token|refresh_token|client_secret|password|pass|token|cookie|secret|auth|csrf_token|_csrf|csrf)['\"]?\s*[:=]\s*)(?!['\"])([^\s,;&'\")\]\}]+)",
         r"\g<1>***REDACTED***",
     ),
 )
@@ -123,6 +123,8 @@ class CredentialFilter(logging.Filter):
             rendered = str(record.msg)
         record.msg = _sanitize_string(rendered)
         record.args = None
+        if getattr(record, "exc_text", None):
+            record.exc_text = _sanitize_string(str(record.exc_text))
         return True
 
 

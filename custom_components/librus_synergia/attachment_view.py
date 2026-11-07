@@ -89,18 +89,10 @@ async def _async_download(
     try:
         file = await download(coordinator)
     except LibrusError as err:
-        # Librus's own error text stays in the log with credentials redacted:
-        # it can carry URLs and session details that don't belong in logs or responses.
-        clean_err = re.sub(
-            r"(cookie|token|auth|pass|password)=[^\s&'\"]+",
-            r"\1=***REDACTED***",
-            str(err),
-            flags=re.IGNORECASE,
-        )
         if getattr(err, "status_code", None) == 404:
-            _LOGGER.debug("Attachment not found (%s): %s", request.path, clean_err)
+            _LOGGER.debug("Attachment not found (%s): %s", request.path, err)
             return web.Response(status=HTTPStatus.NOT_FOUND, text="Not found")
-        _LOGGER.warning("Attachment download failed (%s): %s", request.path, clean_err)
+        _LOGGER.warning("Attachment download failed (%s): %s", request.path, err)
         return web.Response(status=HTTPStatus.BAD_GATEWAY, text="Librus: download failed")
     except ValueError as err:
         # The library raises ValueError for an answer it can't make sense
