@@ -508,7 +508,7 @@ async def test_parent_and_student_get_their_own_text(hass) -> None:
     await hass.async_block_till_done()
 
     assert len(calls) == 2
-    assert [(e.data["audience"], e.data["headline"]) for e in events] == [
+    assert sorted((e.data["audience"], e.data["headline"]) for e in events) == [
         ("parent", "Do rodzica"),
         ("student", "Do Oli"),
     ]

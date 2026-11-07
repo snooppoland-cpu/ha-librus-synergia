@@ -50,7 +50,7 @@ CREDENTIAL_PATTERNS: tuple[tuple[str, str], ...] = (
     ),
     # Authorization: Bearer unquoted
     (
-        r"(\bAuthorization\b['\"]?\s*:\s*Bearer\s+)(?!['\"])([^\s,;&'\")\]\}]+)",
+        r"(\bAuthorization\b['\"]?\s*:\s*Bearer\s+)(?!['\"\[\{])([^\s,;&'\")\]\}\[\{]+)",
         r"\g<1>***REDACTED***",
     ),
     # Key-value credential patterns (quoted values)
@@ -60,7 +60,7 @@ CREDENTIAL_PATTERNS: tuple[tuple[str, str], ...] = (
     ),
     # Key-value credential patterns (unquoted values)
     (
-        r"(\b(?:access_token|refresh_token|client_secret|password|pass|token|cookies|cookie|authorization|secret|auth|csrf_token|_csrf|csrf)\b['\"]?\s*[:=]\s*)(?!['\"]|Bearer\b)([^\s,;&'\")\]\}]+)",
+        r"(\b(?:access_token|refresh_token|client_secret|password|pass|token|cookies|cookie|authorization|secret|auth|csrf_token|_csrf|csrf)\b['\"]?\s*[:=]\s*)(?!['\"\[\{]|Bearer\b)([^\s,;&'\")\]\}\[\{]+)",
         r"\g<1>***REDACTED***",
     ),
 )

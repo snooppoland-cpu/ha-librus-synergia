@@ -378,6 +378,40 @@ def test_credential_filter_covers_cookies_and_authorization() -> None:
     assert rec3.msg == 'authorized=True, cookies_jar=5, author="Adam", passed=True'
 
 
+def test_credential_filter_unquoted_scalar_excludes_brackets_and_braces() -> None:
+    """Ensure unquoted scalar regex excludes [ and { to prevent stringified JSON lists leaking nested tokens."""
+    cred_filter = CredentialFilter()
+
+    # Nested token in stringified JSON list should be properly redacted without destroying list structure
+    rec1 = logging.LogRecord(
+        "test", logging.INFO, "t.py", 1,
+        '{"token": [{"id": 1, "token": "secret_nested_token"}]}',
+        (), None,
+    )
+    cred_filter.filter(rec1)
+    assert "secret_nested_token" not in rec1.msg
+    assert rec1.msg == '{"token": [{"id": 1, "token": "***REDACTED***"}]}'
+
+    # Cookies array of dicts in stringified JSON should not match cookies as unquoted scalar
+    rec2 = logging.LogRecord(
+        "test", logging.INFO, "t.py", 1,
+        '{"cookies": [{"name": "auth_cookie", "token": "cookie_secret"}]}',
+        (), None,
+    )
+    cred_filter.filter(rec2)
+    assert "cookie_secret" not in rec2.msg
+    assert rec2.msg == '{"cookies": [{"name": "auth_cookie", "token": "***REDACTED***"}]}'
+
+    # Unquoted scalar tokens still get redacted
+    rec3 = logging.LogRecord(
+        "test", logging.INFO, "t.py", 1,
+        'token=unquoted_scalar_secret_val',
+        (), None,
+    )
+    cred_filter.filter(rec3)
+    assert rec3.msg == 'token=***REDACTED***'
+
+
 # 3) Session Management Locking Tests
 @pytest.mark.asyncio
 async def test_session_lock_serializes_concurrent_tasks() -> None:
@@ -684,6 +718,39 @@ async def test_retry_with_backoff_client_response_error_status_filtering() -> No
     with patch("custom_components.librus_synergia.retry.range", return_value=[]):
         with pytest.raises(RuntimeError, match="Unexpected end of retry loop"):
             await async_retry_with_backoff(dummy_op)
+
+
+@pytest.mark.asyncio
+async def test_retry_with_backoff_applies_random_jitter() -> None:
+    """Ensure async_retry_with_backoff applies random jitter (0.8-1.2) to sleep delays."""
+    attempts = 0
+    slept_delays: list[float] = []
+
+    async def failing_op() -> str:
+        nonlocal attempts
+        attempts += 1
+        if attempts < 3:
+            raise LibrusConnectionError("Transient drop")
+        return "recovered"
+
+    with patch(
+        "custom_components.librus_synergia.retry.asyncio.sleep",
+        side_effect=lambda d: slept_delays.append(d),
+    ):
+        result = await async_retry_with_backoff(
+            failing_op,
+            max_retries=3,
+            initial_delay=1.0,
+            backoff_factor=2.0,
+        )
+
+    assert result == "recovered"
+    assert attempts == 3
+    assert len(slept_delays) == 2
+    # First sleep base delay is 1.0, jitter between 0.8 and 1.2
+    assert 0.8 <= slept_delays[0] <= 1.2
+    # Second sleep base delay is 2.0, jitter between 1.6 and 2.4
+    assert 1.6 <= slept_delays[1] <= 2.4
 
 
 # 6) Data Models (Dataclasses) Tests

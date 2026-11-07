@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 from collections.abc import Awaitable, Callable
 from typing import TypeVar
 
 import aiohttp
-from librus_synergia.exceptions import LibrusConnectionError, LibrusServerMaintenanceError
+from librus_synergia.exceptions import (
+    LibrusConnectionError,
+    LibrusServerMaintenanceError,
+)
 
 from .security import register_credential_filter
 
@@ -63,14 +67,15 @@ async def async_retry_with_backoff(
                     err,
                 )
                 raise
+            sleep_delay = delay * random.uniform(0.8, 1.2)
             _LOGGER.debug(
                 "API request failed (attempt %d/%d): %s. Retrying in %.2fs...",
                 attempt,
                 max_retries,
                 err,
-                delay,
+                sleep_delay,
             )
-            await asyncio.sleep(delay)
+            await asyncio.sleep(sleep_delay)
             delay = min(delay * backoff_factor, max_delay)
     if last_err is not None:
         raise last_err
