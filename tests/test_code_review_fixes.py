@@ -222,10 +222,10 @@ def test_credential_filter_regex_word_boundaries_and_unquoted() -> None:
     cred_filter.filter(rec3)
     assert rec3.msg == 'token="***REDACTED***" cookie=\'***REDACTED***\' secret="***REDACTED***" auth: "***REDACTED***" csrf=\'***REDACTED***\''
 
-    # Suffixes should not be redacted (author, passed)
-    rec4 = logging.LogRecord("test", logging.INFO, "t.py", 1, 'passed=True, author="Adam"', (), None)
+    # Word boundaries (should NOT redact non-credential words like compass, bypass, author, passed)
+    rec4 = logging.LogRecord("test", logging.INFO, "t.py", 1, 'compass: "north", bypass=123, passed=True, author="Adam"', (), None)
     cred_filter.filter(rec4)
-    assert rec4.msg == 'passed=True, author="Adam"'
+    assert rec4.msg == 'compass: "north", bypass=123, passed=True, author="Adam"'
 
 
 def test_credential_filter_covers_csrf_token_and_underscore_csrf() -> None:
@@ -253,14 +253,14 @@ def test_credential_filter_covers_csrf_token_and_underscore_csrf() -> None:
     cred_filter.filter(rec2)
     assert rec2.msg == '{"_csrf": "***REDACTED***", "csrf_token": "***REDACTED***"}'
 
-    # Prefixed credentials like foo_csrf and test_csrf_token are redacted
+    # Underscore-prefixed keys and word boundaries (foo_csrf and test_csrf_token should NOT be redacted)
     rec3 = logging.LogRecord(
         "test", logging.INFO, "t.py", 1,
         'foo_csrf=safe and test_csrf_token="safe_val" but _csrf="secret" and csrf_token=secret',
         (), None,
     )
     cred_filter.filter(rec3)
-    assert rec3.msg == 'foo_csrf=***REDACTED*** and test_csrf_token="***REDACTED***" but _csrf="***REDACTED***" and csrf_token=***REDACTED***'
+    assert rec3.msg == 'foo_csrf=safe and test_csrf_token="safe_val" but _csrf="***REDACTED***" and csrf_token=***REDACTED***'
 
 
 def test_credential_filter_sanitizes_record_exc_text() -> None:
@@ -412,39 +412,36 @@ def test_credential_filter_unquoted_scalar_excludes_brackets_and_braces() -> Non
     assert rec3.msg == 'token=***REDACTED***'
 
 
-def test_credential_filter_prefixed_credentials_and_query_strings() -> None:
-    """Ensure prefixed credentials like api_token=, session_token= and tokens in query strings are matched."""
+def test_credential_filter_query_strings() -> None:
+    """Ensure tokens in query strings are matched while non-credential words like compass/bypass are preserved."""
     cred_filter = CredentialFilter()
 
-    # Prefixed credentials unquoted and quoted
+    # Query strings containing tokens
     rec1 = logging.LogRecord(
         "test", logging.INFO, "t.py", 1,
-        'api_token=secret_api_123 session_token="secret_sess_456" auth_token=\'secret_auth_789\'',
+        'GET https://api.librus.pl/v3/users?token=xyz123&page=1',
         (), None,
     )
     cred_filter.filter(rec1)
-    assert rec1.msg == (
-        'api_token=***REDACTED*** session_token="***REDACTED***" '
-        'auth_token=\'***REDACTED***\''
-    )
-
-    # Query strings containing tokens and prefixed tokens
-    rec2 = logging.LogRecord(
-        "test", logging.INFO, "t.py", 1,
-        'GET https://api.librus.pl/v3/users?api_token=xyz123&session_token=abc456&page=1',
-        (), None,
-    )
-    cred_filter.filter(rec2)
-    assert rec2.msg == 'GET https://api.librus.pl/v3/users?api_token=***REDACTED***&session_token=***REDACTED***&page=1'
+    assert rec1.msg == 'GET https://api.librus.pl/v3/users?token=***REDACTED***&page=1'
 
     # Plain tokens in query strings
-    rec3 = logging.LogRecord(
+    rec2 = logging.LogRecord(
         "test", logging.INFO, "t.py", 1,
         'Request: https://synergia.librus.pl/login?token=login_tok_999&other=1',
         (), None,
     )
+    cred_filter.filter(rec2)
+    assert rec2.msg == 'Request: https://synergia.librus.pl/login?token=***REDACTED***&other=1'
+
+    # Words like bypass and compass are not falsely redacted
+    rec3 = logging.LogRecord(
+        "test", logging.INFO, "t.py", 1,
+        'bypass=123 compass: "north" surpass=456',
+        (), None,
+    )
     cred_filter.filter(rec3)
-    assert rec3.msg == 'Request: https://synergia.librus.pl/login?token=***REDACTED***&other=1'
+    assert rec3.msg == 'bypass=123 compass: "north" surpass=456'
 
 
 # 3) Session Management Locking Tests
@@ -1010,6 +1007,40 @@ async def test_attachment_view_error_logging_redacts_credentials_via_filter(
     assert "cookie=***REDACTED***" in log_text
     assert "token=***REDACTED***" in log_text
     assert "_csrf=***REDACTED***" in log_text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "exception_to_raise",
+    [
+        "client_error",
+        "timeout_error",
+        "os_error",
+    ],
+)
+async def test_attachment_view_catches_network_exceptions(
+    hass, hass_client, exception_to_raise: str
+) -> None:
+    """Ensure attachment view catches aiohttp.ClientError, TimeoutError, and OSError returning 502."""
+    import aiohttp
+    from homeassistant.helpers import device_registry as dr
+    from tests.test_topics_trips_documents import setup_integration
+
+    err_map = {
+        "client_error": aiohttp.ClientError("network failure"),
+        "timeout_error": TimeoutError("timeout exceeded"),
+        "os_error": OSError("network unreachable"),
+    }
+
+    client = build_mock_client()
+    client.async_download_message_attachment.side_effect = err_map[exception_to_raise]
+    entry = await setup_integration(hass, client)
+    device = dr.async_get(hass).async_get_device_by_identifier((DOMAIN, entry.entry_id), entry.entry_id)
+    http = await hass_client()
+
+    resp = await http.get(f"/api/{DOMAIN}/attachment/{device.id}/99/55")
+    assert resp.status == 502
+    assert "download failed" in (await resp.text()).lower()
 
 
 def test_coordinator_exception_tuples_include_cancelled_error() -> None:

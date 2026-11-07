@@ -215,6 +215,7 @@ class SchoolDayRefresh:
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()  # type: ignore[misc]
+        self._last_written = self._signature()
         self.async_on_remove(  # type: ignore[attr-defined]
             school_day_clock(self.coordinator).async_add_listener(  # type: ignore[attr-defined]
                 self._async_transition
@@ -223,13 +224,15 @@ class SchoolDayRefresh:
 
     @callback
     def _async_transition(self) -> None:
-        if self._signature() != self._last_written:
+        sig = self._signature()
+        if sig != self._last_written:
+            self._last_written = sig
             self.async_write_ha_state()  # type: ignore[attr-defined]
 
     @callback
-    def async_write_ha_state(self) -> None:
+    def _handle_coordinator_update(self) -> None:
+        super()._handle_coordinator_update()  # type: ignore[misc]
         self._last_written = self._signature()
-        super().async_write_ha_state()  # type: ignore[misc]
 
 
 class SkipUnchangedUpdates:
