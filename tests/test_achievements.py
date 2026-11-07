@@ -342,3 +342,14 @@ def test_subject_star_from_points_goes_by_date_not_list_order() -> None:
     badges = _badges(data, point_thresholds=_POINT_SCALE)
     assert badges["subject_star"].earned == {"subject_star": "2026-09-13"}
 
+
+def test_honours_forecast_not_corrupted_by_subject_point_scales() -> None:
+    """Ensure subject point scales do not corrupt thresholds passed to subject_forecasts."""
+    grades = [_grade(1, "5", "2026-09-05")]
+    points = [_point(1, 10, 10, "2026-09-06")]
+    data = _data(grades=grades, point_grades=points)
+    badges = _badges(data, today=date(2027, 6, 26), point_thresholds=_POINT_SCALE)
+    assert badges["honours"].value == 5.5
+    assert badges["honours"].earned == {"honours": "2027-06-25"}
+
+
