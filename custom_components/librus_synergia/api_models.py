@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Generic, Mapping, TypeVar
+from typing import Any, Generic, TypeVar
 
 T = TypeVar("T")
 
@@ -99,7 +100,7 @@ class MeResponse:
 class GradeResponse:
     """Data model representing a grade returned by the API."""
 
-    id: int | str
+    id: int | str = ""
     lesson_id: int | str | None = None
     subject_id: int | str | None = None
     grade: str = ""
@@ -112,8 +113,11 @@ class GradeResponse:
     is_final: bool = False
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> GradeResponse:
+    def from_dict(cls, data: Mapping[str, Any] | None = None) -> GradeResponse:
         """Create GradeResponse from API dictionary."""
+        if not data or not isinstance(data, Mapping):
+            return cls()
+
         lesson = data.get("Lesson")
         lesson_id = lesson.get("Id") if isinstance(lesson, Mapping) else lesson
 
@@ -148,7 +152,7 @@ class GradeResponse:
 class LessonResponse:
     """Data model representing a timetable lesson returned by the API."""
 
-    id: int | str
+    id: int | str = ""
     lesson_no: int | None = None
     date: str = ""
     subject_id: int | str | None = None
@@ -158,8 +162,11 @@ class LessonResponse:
     is_substitution: bool = False
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> LessonResponse:
+    def from_dict(cls, data: Mapping[str, Any] | None = None) -> LessonResponse:
         """Create LessonResponse from API dictionary."""
+        if not data or not isinstance(data, Mapping):
+            return cls()
+
         subject = data.get("Subject")
         subject_id = subject.get("Id") if isinstance(subject, Mapping) else subject
 
@@ -185,14 +192,17 @@ class LessonResponse:
 class AttendanceResponse:
     """Data model representing attendance record returned by the API."""
 
-    id: int | str
+    id: int | str = ""
     lesson_no: int | None = None
     date: str = ""
     type_id: int | str | None = None
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> AttendanceResponse:
+    def from_dict(cls, data: Mapping[str, Any] | None = None) -> AttendanceResponse:
         """Create AttendanceResponse from API dictionary."""
+        if not data or not isinstance(data, Mapping):
+            return cls()
+
         type_obj = data.get("Type")
         type_id = type_obj.get("Id") if isinstance(type_obj, Mapping) else type_obj
         return cls(
@@ -207,7 +217,7 @@ class AttendanceResponse:
 class TeacherResponse:
     """Data model representing a teacher returned by the API."""
 
-    id: int | str
+    id: int | str = ""
     first_name: str = ""
     last_name: str = ""
 
@@ -217,8 +227,11 @@ class TeacherResponse:
         return f"{self.first_name} {self.last_name}".strip()
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> TeacherResponse:
+    def from_dict(cls, data: Mapping[str, Any] | None = None) -> TeacherResponse:
         """Create TeacherResponse from API dictionary."""
+        if not data or not isinstance(data, Mapping):
+            return cls()
+
         return cls(
             id=data.get("Id", ""),
             first_name=str(data.get("FirstName") or ""),

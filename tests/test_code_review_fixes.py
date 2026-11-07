@@ -20,14 +20,6 @@ from librus_synergia.exceptions import (
 )
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.librus_synergia.const import DOMAIN
-from custom_components.librus_synergia.coordinator import (
-    parse_attendance_responses,
-    parse_grade_responses,
-    parse_lesson_responses,
-    parse_teacher_responses,
-    wrap_api_response,
-)
 from custom_components.librus_synergia.api_models import (
     ApiResponse,
     AttendanceResponse,
@@ -35,6 +27,11 @@ from custom_components.librus_synergia.api_models import (
     LessonResponse,
     MeResponse,
     TeacherResponse,
+)
+from custom_components.librus_synergia.const import DOMAIN
+from custom_components.librus_synergia.coordinator import (
+    parse_grade_responses,
+    parse_teacher_responses,
 )
 from custom_components.librus_synergia.retry import async_retry_with_backoff
 from custom_components.librus_synergia.security import (
@@ -171,6 +168,38 @@ async def test_session_lock_none_current_task_release_conflict() -> None:
         lock.release()
 
 
+@pytest.mark.asyncio
+async def test_session_lock_reentrant_same_task() -> None:
+    """Ensure SessionLock supports re-entrant acquisition within the same task."""
+    lock = SessionLock()
+    assert not lock.locked
+    async with lock:
+        assert lock.locked
+        assert lock._count == 1
+        async with lock:
+            assert lock.locked
+            assert lock._count == 2
+        assert lock.locked
+        assert lock._count == 1
+    assert not lock.locked
+    assert lock._count == 0
+
+
+@pytest.mark.asyncio
+async def test_session_lock_release_unowned_task_conflict() -> None:
+    """Ensure a different task cannot release another task's lock."""
+    lock = SessionLock()
+    await lock.acquire()
+
+    async def unauthorized_release() -> None:
+        lock.release()
+
+    task = asyncio.create_task(unauthorized_release())
+    with pytest.raises(RuntimeError, match="Cannot release lock owned by another task"):
+        await task
+    lock.release()
+
+
 # 4) Specific Exceptions Tests (AST inspection)
 def test_no_bare_except_in_codebase() -> None:
     """Verify that custom_components/librus_synergia has no bare except handlers."""
@@ -296,6 +325,41 @@ def test_data_models_dataclasses() -> None:
     assert lesson.teacher_id == 40
     assert lesson.classroom_id == 15
 
+    # Test AttendanceResponse
+    attendance_dict = {
+        "Id": 401,
+        "LessonNo": 2,
+        "Date": "2026-11-06",
+        "Type": {"Id": 5},
+    }
+    attendance = AttendanceResponse.from_dict(attendance_dict)
+    assert attendance.id == 401
+    assert attendance.lesson_no == 2
+    assert attendance.date == "2026-11-06"
+    assert attendance.type_id == 5
+
+    # Test TeacherResponse
+    teacher_dict = {
+        "Id": 501,
+        "FirstName": "Anna",
+        "LastName": "Nowak",
+    }
+    teacher = TeacherResponse.from_dict(teacher_dict)
+    assert teacher.id == 501
+    assert teacher.first_name == "Anna"
+    assert teacher.last_name == "Nowak"
+    assert teacher.full_name == "Anna Nowak"
+
+    # Test from_dict(None) and from_dict({}) safe defaults
+    for model_cls in (GradeResponse, LessonResponse, AttendanceResponse, TeacherResponse):
+        none_instance = model_cls.from_dict(None)
+        assert isinstance(none_instance, model_cls)
+        assert none_instance.id == ""
+
+        empty_instance = model_cls.from_dict({})
+        assert isinstance(empty_instance, model_cls)
+        assert empty_instance.id == ""
+
     # Test ApiResponse container
     api_resp = ApiResponse(status="ok", data=grade)
     assert api_resp.status == "ok"
@@ -402,24 +466,6 @@ def test_coordinator_parsers_use_dataclass_models() -> None:
     assert isinstance(parsed_grades[0], GradeResponse)
     assert parsed_grades[0].grade == "5"
 
-    timetable_payload = {
-        "Timetable": {
-            "2026-11-06": [{"Id": 101, "LessonNo": 1, "Subject": {"Id": 20}}]
-        }
-    }
-    parsed_lessons = parse_lesson_responses(timetable_payload)
-    assert len(parsed_lessons) == 1
-    assert isinstance(parsed_lessons[0], LessonResponse)
-    assert parsed_lessons[0].id == 101
-
-    attendances_payload = {
-        "Attendances": [{"Id": 201, "LessonNo": 1, "Type": {"Id": 2}}]
-    }
-    parsed_attendances = parse_attendance_responses(attendances_payload)
-    assert len(parsed_attendances) == 1
-    assert isinstance(parsed_attendances[0], AttendanceResponse)
-    assert parsed_attendances[0].id == 201
-
     teachers_payload = {
         "Teachers": [{"Id": 301, "FirstName": "Anna", "LastName": "Nowak"}]
     }
@@ -427,10 +473,6 @@ def test_coordinator_parsers_use_dataclass_models() -> None:
     assert len(parsed_teachers) == 1
     assert isinstance(parsed_teachers[0], TeacherResponse)
     assert parsed_teachers[0].full_name == "Anna Nowak"
-
-    wrapped = wrap_api_response(parsed_grades)
-    assert isinstance(wrapped, ApiResponse)
-    assert wrapped.data == parsed_grades
 
 
 @pytest.mark.asyncio
@@ -491,7 +533,7 @@ def test_credential_filter_registered_on_all_submodule_loggers() -> None:
     ]
 
     for mod in submodules:
-        logger = getattr(mod, "_LOGGER")
+        logger = mod._LOGGER
         assert any(
             isinstance(f, CredentialFilter) for f in logger.filters
         ), f"CredentialFilter not registered on {mod.__name__}._LOGGER"

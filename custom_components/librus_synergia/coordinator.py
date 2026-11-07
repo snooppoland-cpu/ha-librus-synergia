@@ -46,15 +46,12 @@ from librus_synergia.const import EXTRA_ACTIVITY_ENDPOINTS, MESSAGE_RECIPIENT_GR
 from librus_synergia.parsers import mark_class_tutor, message_recipient_groups
 
 from .api_models import (
-    ApiResponse,
-    AttendanceResponse,
     GradeResponse,
-    LessonResponse,
     MeResponse,
     TeacherResponse,
 )
 from .retry import async_retry_with_backoff
-from .security import CredentialFilter, SessionLock, register_credential_filter
+from .security import SessionLock, register_credential_filter
 from librus_synergia.changes import Changes, ChangeTracker, SeenIds
 from librus_synergia.exceptions import LibrusUnexpectedResponseError
 from librus_synergia.changes import absences as tracked_absences
@@ -541,30 +538,6 @@ def parse_grade_responses(payload: Any) -> list[GradeResponse]:
     return [GradeResponse.from_dict(item) for item in items if isinstance(item, Mapping)]
 
 
-def parse_lesson_responses(payload: Any) -> list[LessonResponse]:
-    """Parse raw Timetable/Lessons payload into typed LessonResponse objects."""
-    items = payload.get("Timetable") or payload.get("Lessons") if isinstance(payload, dict) else None
-    if isinstance(items, dict):
-        lessons: list[LessonResponse] = []
-        for day_lessons in items.values():
-            if isinstance(day_lessons, list):
-                for entry in day_lessons:
-                    if isinstance(entry, Mapping):
-                        lessons.append(LessonResponse.from_dict(entry))
-        return lessons
-    if isinstance(items, list):
-        return [LessonResponse.from_dict(item) for item in items if isinstance(item, Mapping)]
-    return []
-
-
-def parse_attendance_responses(payload: Any) -> list[AttendanceResponse]:
-    """Parse raw Attendances payload into typed AttendanceResponse objects."""
-    items = payload.get("Attendances") if isinstance(payload, dict) else None
-    if not isinstance(items, list):
-        return []
-    return [AttendanceResponse.from_dict(item) for item in items if isinstance(item, Mapping)]
-
-
 def parse_teacher_responses(payload: Any) -> list[TeacherResponse]:
     """Parse raw Teachers payload into typed TeacherResponse objects."""
     items = None
@@ -576,11 +549,6 @@ def parse_teacher_responses(payload: Any) -> list[TeacherResponse]:
     if not isinstance(items, list):
         return []
     return [TeacherResponse.from_dict(item) for item in items if isinstance(item, Mapping)]
-
-
-def wrap_api_response(data: Any, message: str | None = None) -> ApiResponse[Any]:
-    """Wrap API response data in generic ApiResponse dataclass."""
-    return ApiResponse(status="ok", data=data, message=message)
 
 
 def _referenced_ids(payload: Any, list_key: str, field: str) -> set[Any]:
