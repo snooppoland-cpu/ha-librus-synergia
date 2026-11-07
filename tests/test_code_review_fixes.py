@@ -21,15 +21,16 @@ from librus_synergia.exceptions import (
 )
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from librus_synergia.models import GradeData
+from librus_synergia.parsers import parse_grades
 from custom_components.librus_synergia.api_models import (
-    GradeResponse,
+    AccountInfo,
     MeResponse,
-    TeacherResponse,
+    UserInfo,
 )
 from custom_components.librus_synergia.const import DOMAIN
 from custom_components.librus_synergia.coordinator import (
-    parse_grade_responses,
-    parse_teacher_responses,
+    _referenced_ids,
 )
 from custom_components.librus_synergia.retry import async_retry_with_backoff
 from custom_components.librus_synergia.security import (
@@ -87,7 +88,7 @@ def test_sanitize_payload_substring_keys() -> None:
 
 
 def test_credential_filter_redacts_log_records() -> None:
-    """Ensure CredentialFilter strips sensitive credentials from log records and string args."""
+    """Ensure CredentialFilter strips sensitive credentials from log records and renders getMessage()."""
     cred_filter = CredentialFilter()
     # Test dictionary in args
     record1 = logging.LogRecord(
@@ -100,9 +101,9 @@ def test_credential_filter_redacts_log_records() -> None:
         exc_info=None,
     )
     assert cred_filter.filter(record1) is True
-    args1 = record1.args if isinstance(record1.args, dict) else record1.args[0]
-    assert args1["pass"] == "***REDACTED***"
-    assert args1["username"] == "admin"
+    assert "***REDACTED***" in record1.getMessage()
+    assert "supersecret" not in record1.getMessage()
+    assert "admin" in record1.getMessage()
 
     # Test string args in record.args (tuple, list, and single string)
     record2 = logging.LogRecord(
@@ -115,8 +116,12 @@ def test_credential_filter_redacts_log_records() -> None:
         exc_info=None,
     )
     assert cred_filter.filter(record2) is True
-    assert record2.args[0] == "https://librus.pl?token=***REDACTED***&cookie=***REDACTED***"
-    assert record2.args[1] == "password=***REDACTED***"
+    assert "token=***REDACTED***" in record2.getMessage()
+    assert "cookie=***REDACTED***" in record2.getMessage()
+    assert "password=***REDACTED***" in record2.getMessage()
+    assert "supersecret123" not in record2.getMessage()
+    assert "abc456" not in record2.getMessage()
+    assert "adminpass" not in record2.getMessage()
 
     record3 = logging.LogRecord(
         name="test_logger",
@@ -128,7 +133,7 @@ def test_credential_filter_redacts_log_records() -> None:
         exc_info=None,
     )
     assert cred_filter.filter(record3) is True
-    assert record3.args == "secret=***REDACTED***"
+    assert record3.getMessage() == "Single string arg: secret=***REDACTED***"
 
 
 def test_sanitize_arg_handles_base_exception() -> None:
@@ -155,7 +160,40 @@ def test_sanitize_arg_handles_base_exception() -> None:
         exc_info=None,
     )
     assert cred_filter.filter(record) is True
-    assert record.args == ("Connection failed: token=***REDACTED*** password=***REDACTED***",)
+    assert record.getMessage() == "API error: Connection failed: token=***REDACTED*** password=***REDACTED***"
+
+
+def test_credential_filter_renders_and_expands_regex() -> None:
+    """Ensure CredentialFilter covers access_token, refresh_token, Authorization: Bearer, client_secret."""
+    cred_filter = CredentialFilter()
+
+    # Formatted %s with Authorization: Bearer in msg and token in args
+    rec1 = logging.LogRecord(
+        "test", logging.INFO, "t.py", 1, "Authorization: Bearer %s", ("secret_bearer_token",), None
+    )
+    cred_filter.filter(rec1)
+    assert rec1.getMessage() == "Authorization: Bearer ***REDACTED***"
+
+    # Quoted Bearer header in dict representation
+    rec2 = logging.LogRecord(
+        "test", logging.INFO, "t.py", 1, "Headers: {'Authorization': 'Bearer token_abc123'}", (), None
+    )
+    cred_filter.filter(rec2)
+    assert rec2.getMessage() == "Headers: {'Authorization': 'Bearer ***REDACTED***'}"
+
+    # access_token and refresh_token
+    rec3 = logging.LogRecord(
+        "test", logging.INFO, "t.py", 1, 'access_token="tok123"&refresh_token="ref456"', (), None
+    )
+    cred_filter.filter(rec3)
+    assert rec3.getMessage() == 'access_token="***REDACTED***"&refresh_token="***REDACTED***"'
+
+    # client_secret
+    rec4 = logging.LogRecord(
+        "test", logging.INFO, "t.py", 1, "client_secret=super_secret_client_val", (), None
+    )
+    cred_filter.filter(rec4)
+    assert rec4.getMessage() == "client_secret=***REDACTED***"
 
 
 def test_credential_filter_regex_word_boundaries_and_unquoted() -> None:
@@ -260,18 +298,42 @@ async def test_session_lock_reentrant_same_task() -> None:
 
 
 @pytest.mark.asyncio
-async def test_session_lock_no_reentrant_when_current_task_is_none() -> None:
-    """Ensure SessionLock does not allow re-entrant acquisition when current_task is None."""
+async def test_session_lock_reentrant_when_current_task_is_none() -> None:
+    """Ensure SessionLock supports re-entrant acquisition and avoids deadlock when current_task is None."""
     lock = SessionLock()
     with patch("asyncio.current_task", return_value=None):
         await lock.acquire()
         assert lock.locked
         assert lock._count == 1
-        with pytest.raises(asyncio.TimeoutError):
-            await asyncio.wait_for(lock.acquire(), timeout=0.05)
+        # Re-entrant acquire must succeed without deadlock
+        await asyncio.wait_for(lock.acquire(), timeout=0.1)
+        assert lock.locked
+        assert lock._count == 2
+        lock.release()
+        assert lock.locked
+        assert lock._count == 1
         lock.release()
         assert not lock.locked
         assert lock._count == 0
+
+
+@pytest.mark.asyncio
+async def test_session_lock_none_current_task_cross_release_prevented() -> None:
+    """Ensure callers with distinct contextvars contexts cannot release each other's lock when current_task is None."""
+    import contextvars
+
+    lock = SessionLock()
+    with patch("asyncio.current_task", return_value=None):
+        await lock.acquire()
+        assert lock.locked
+
+        ctx2 = contextvars.Context()
+        with pytest.raises(RuntimeError, match="Cannot release lock owned by another task"):
+            ctx2.run(lock.release)
+
+        assert lock.locked
+        lock.release()
+        assert not lock.locked
 
 
 @pytest.mark.asyncio
@@ -492,44 +554,27 @@ def test_data_models_dataclasses() -> None:
     assert me_resp.account.id == 1001
     assert me_resp.user.class_register_number == 12
 
-    # Test GradeResponse
-    grade_dict = {
-        "Id": 501,
-        "Grade": "5",
-        "Weight": 2.5,
-        "IsConstituent": True,
-        "Category": {"Id": 10},
-        "Subject": {"Id": 20},
-    }
-    grade = GradeResponse.from_dict(grade_dict)
+    # Test safe defaults for MeResponse
+    none_instance = MeResponse.from_dict(None)
+    assert isinstance(none_instance, MeResponse)
+    empty_instance = MeResponse.from_dict({})
+    assert isinstance(empty_instance, MeResponse)
+
+    # Verify upstream librus_synergia.models GradeData
+    grade = GradeData(
+        id=501,
+        value="5",
+        category_id=10,
+        subject_id=20,
+        semester=1,
+        add_date="2026-09-01",
+        is_semester_proposition=False,
+        is_final_proposition=False,
+    )
     assert grade.id == 501
-    assert grade.grade == "5"
-    assert grade.weight == 2.5
-    assert grade.is_constituent is True
+    assert grade.value == "5"
     assert grade.category_id == 10
     assert grade.subject_id == 20
-
-    # Test TeacherResponse
-    teacher_dict = {
-        "Id": 501,
-        "FirstName": "Anna",
-        "LastName": "Nowak",
-    }
-    teacher = TeacherResponse.from_dict(teacher_dict)
-    assert teacher.id == 501
-    assert teacher.first_name == "Anna"
-    assert teacher.last_name == "Nowak"
-    assert teacher.full_name == "Anna Nowak"
-
-    # Test from_dict(None) and from_dict({}) safe defaults
-    for model_cls in (GradeResponse, TeacherResponse):
-        none_instance = model_cls.from_dict(None)
-        assert isinstance(none_instance, model_cls)
-        assert none_instance.id == ""
-
-        empty_instance = model_cls.from_dict({})
-        assert isinstance(empty_instance, model_cls)
-        assert empty_instance.id == ""
 
 
 # 7) Re-auth Flow Tests
@@ -688,25 +733,25 @@ def test_coordinator_exception_tuples_include_cancelled_error() -> None:
     assert "BaseException" in source or "asyncio.CancelledError" in source
 
 
-def test_coordinator_parsers_use_dataclass_models() -> None:
-    """Verify coordinator parser helpers use api_models.py dataclasses."""
+def test_coordinator_grades_reference_ids_use_upstream_grade_data() -> None:
+    """Verify coordinator _referenced_ids uses upstream librus_synergia.models GradeData."""
     grades_payload = {
         "Grades": [
-            {"Id": 1, "Grade": "5", "Weight": 2.0, "Category": {"Id": 10}, "Subject": {"Id": 20}}
+            {"Id": 1, "Grade": "5", "Weight": 2.0, "Category": {"Id": 10}, "Subject": {"Id": 20}},
+            {"Id": 2, "Grade": "4", "Weight": 1.0, "Category": {"Id": 11}, "Subject": {"Id": 21}},
         ]
     }
-    parsed_grades = parse_grade_responses(grades_payload)
-    assert len(parsed_grades) == 1
-    assert isinstance(parsed_grades[0], GradeResponse)
-    assert parsed_grades[0].grade == "5"
+    parsed = parse_grades(grades_payload)
+    assert len(parsed) == 2
+    assert isinstance(parsed[0], GradeData)
+    assert parsed[0].id == 1
+    assert parsed[0].category_id == 10
+    assert parsed[0].subject_id == 20
 
-    teachers_payload = {
-        "Teachers": [{"Id": 301, "FirstName": "Anna", "LastName": "Nowak"}]
-    }
-    parsed_teachers = parse_teacher_responses(teachers_payload)
-    assert len(parsed_teachers) == 1
-    assert isinstance(parsed_teachers[0], TeacherResponse)
-    assert parsed_teachers[0].full_name == "Anna Nowak"
+    cat_ids = _referenced_ids(grades_payload, "Grades", "Category")
+    subj_ids = _referenced_ids(grades_payload, "Grades", "Subject")
+    assert cat_ids == {10, 11}
+    assert subj_ids == {20, 21}
 
 
 @pytest.mark.asyncio
@@ -972,4 +1017,43 @@ async def test_weekly_summary_non_schema_error_does_not_fallback(hass) -> None:
 
     assert len(calls) == 1
     assert "structure" in calls[0]
+
+
+@pytest.mark.asyncio
+async def test_weekly_summary_catches_aiohttp_client_error(hass) -> None:
+    """Verify weekly summary catches aiohttp.ClientError and raises HomeAssistantError."""
+    import aiohttp
+    from homeassistant.core import SupportsResponse
+    from homeassistant.exceptions import HomeAssistantError
+    from custom_components.librus_synergia.const import (
+        CONF_AI_AUDIENCE,
+        CONF_AI_TASK_ENTITY,
+        CONF_AI_TIME,
+        CONF_AI_WEEKDAY,
+    )
+    from tests.test_topics_trips_documents import setup_integration
+
+    ai_options = {
+        CONF_AI_TASK_ENTITY: "ai_task.mock",
+        CONF_AI_AUDIENCE: "parent",
+        CONF_AI_WEEKDAY: "7",
+        CONF_AI_TIME: "18:00:00",
+    }
+
+    async def _handler(call):
+        raise aiohttp.ClientError("Cannot connect to AI service host")
+
+    hass.services.async_register(
+        "ai_task", "generate_data", _handler, supports_response=SupportsResponse.ONLY
+    )
+
+    client = build_mock_client()
+    entry = await setup_integration(hass, client, options=ai_options)
+    coordinator = entry.runtime_data
+
+    with pytest.raises(HomeAssistantError, match="Weekly summary failed: Cannot connect to AI service host"):
+        await coordinator.weekly_summary.async_generate(wait=True)
+
+    assert coordinator.weekly_summary.last_error == "Cannot connect to AI service host"
+
 

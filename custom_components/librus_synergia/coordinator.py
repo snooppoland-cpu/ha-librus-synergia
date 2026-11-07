@@ -44,11 +44,7 @@ from librus_synergia import (
 from librus_synergia.const import EXTRA_ACTIVITY_ENDPOINTS, MESSAGE_RECIPIENT_GROUPS
 from librus_synergia.parsers import mark_class_tutor, message_recipient_groups
 
-from .api_models import (
-    GradeResponse,
-    MeResponse,
-    TeacherResponse,
-)
+from .api_models import MeResponse
 from .retry import async_retry_with_backoff
 from .security import SessionLock, register_credential_filter
 from librus_synergia.changes import Changes, ChangeTracker, SeenIds
@@ -529,34 +525,21 @@ def _as_id(value: Any) -> Any:
         return str(value)
 
 
-def parse_grade_responses(payload: Any) -> list[GradeResponse]:
-    """Parse raw Grades payload into typed GradeResponse objects."""
-    items = payload.get("Grades") if isinstance(payload, dict) else None
-    if not isinstance(items, list):
-        return []
-    return [GradeResponse.from_dict(item) for item in items if isinstance(item, Mapping)]
-
-
-def parse_teacher_responses(payload: Any) -> list[TeacherResponse]:
-    """Parse raw Teachers payload into typed TeacherResponse objects."""
-    items = None
-    if isinstance(payload, dict):
-        for key in ("Users", "Teachers"):
-            if key in payload:
-                items = payload[key]
-                break
-    if not isinstance(items, list):
-        return []
-    return [TeacherResponse.from_dict(item) for item in items if isinstance(item, Mapping)]
-
-
 def _referenced_ids(payload: Any, list_key: str, field: str) -> set[Any]:
     """Ids of `field` (`{"Id": ...}`) across the items of a raw list payload,
     e.g. every grade's category id."""
     if list_key == "Grades" and field == "Category":
-        return {_as_id(g.category_id) for g in parse_grade_responses(payload) if g.category_id is not None}
+        return {
+            _as_id(g.category_id)
+            for g in parse_grades(payload if isinstance(payload, dict) else {})
+            if g.category_id is not None
+        }
     if list_key == "Grades" and field == "Subject":
-        return {_as_id(g.subject_id) for g in parse_grade_responses(payload) if g.subject_id is not None}
+        return {
+            _as_id(g.subject_id)
+            for g in parse_grades(payload if isinstance(payload, dict) else {})
+            if g.subject_id is not None
+        }
     items = payload.get(list_key) if isinstance(payload, dict) else None
     ids: set[Any] = set()
     for item in items if isinstance(items, list) else []:
@@ -4525,14 +4508,8 @@ class LibrusDataUpdateCoordinator(DataUpdateCoordinator[LibrusData]):
         # Also by LID (`AccountId`) - the new descriptive grading names its
         # teachers that way, like the kindergarten timetable. A new dict (see
         # _apply_kindergarten_payloads).
-        teachers_dict = {
-            t.id: t.full_name
-            for t in parse_teacher_responses(payload("Teachers"))
-            if t.id and t.full_name
-        }
         self._cached_teachers = {
             **parse_id_name_map(payload("Teachers"), ("Users", "Teachers")),
-            **teachers_dict,
             **parse_kindergarten_teachers(payload("Teachers")),
         }
         if payload("GradingSystem"):

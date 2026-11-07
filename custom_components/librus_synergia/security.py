@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import logging
 import re
 from collections.abc import Mapping
@@ -34,12 +35,29 @@ REDACTED = "***REDACTED***"
 
 
 CREDENTIAL_PATTERNS: tuple[tuple[str, str], ...] = (
+    # Authorization: Bearer in dict/JSON quotes
     (
-        r"(\b(?:password|pass|token|cookie|secret|auth|csrf)['\"]?\s*[:=]\s*)(['\"])[^'\"]*?\2",
+        r"(\bAuthorization['\"]?\s*:\s*['\"]Bearer\s+)([^'\"]*?)(['\"])",
+        r"\g<1>***REDACTED***\g<3>",
+    ),
+    # Authorization: Bearer with quoted token
+    (
+        r"(\bAuthorization\s*:\s*Bearer\s+)(['\"])[^'\"]*?\2",
         r"\g<1>\g<2>***REDACTED***\g<2>",
     ),
+    # Authorization: Bearer unquoted
     (
-        r"(\b(?:password|pass|token|cookie|secret|auth|csrf)['\"]?\s*[:=]\s*)(?!['\"])([^\s,;&'\")\]\}]+)",
+        r"(\bAuthorization\s*:\s*Bearer\s+)(?!['\"])([^\s,;&'\")\]\}]+)",
+        r"\g<1>***REDACTED***",
+    ),
+    # Key-value credential patterns (quoted values)
+    (
+        r"(\b(?:access_token|refresh_token|client_secret|password|pass|token|cookie|secret|auth|csrf)['\"]?\s*[:=]\s*)(['\"])[^'\"]*?\2",
+        r"\g<1>\g<2>***REDACTED***\g<2>",
+    ),
+    # Key-value credential patterns (unquoted values)
+    (
+        r"(\b(?:access_token|refresh_token|client_secret|password|pass|token|cookie|secret|auth|csrf)['\"]?\s*[:=]\s*)(?!['\"])([^\s,;&'\")\]\}]+)",
         r"\g<1>***REDACTED***",
     ),
 )
@@ -99,8 +117,12 @@ class CredentialFilter(logging.Filter):
                 record.args = [_sanitize_arg(arg) for arg in record.args]
             elif isinstance(record.args, str):
                 record.args = _sanitize_string(record.args)
-        if isinstance(record.msg, str):
-            record.msg = _sanitize_string(record.msg)
+        try:
+            rendered = record.getMessage()
+        except Exception:  # noqa: BLE001
+            rendered = str(record.msg)
+        record.msg = _sanitize_string(rendered)
+        record.args = None
         return True
 
 
@@ -164,6 +186,9 @@ def register_credential_filter(logger: logging.Logger | None = None) -> None:
 register_credential_filter(_LOGGER)
 
 
+_caller_context: contextvars.ContextVar[object | None] = contextvars.ContextVar(
+    "session_lock_caller_sentinel", default=None
+)
 _UNOWNED = object()
 
 
@@ -174,7 +199,8 @@ class SessionLock:
     message retrieval, or coordinator updates) serialize session refreshes and
     logins, preventing session collisions and cookie overwrite races.
     Re-entrant for the same asyncio task so nested session calls do not deadlock.
-    Handles callers running without an active Task (asyncio.current_task() is None).
+    Handles callers running without an active Task (asyncio.current_task() is None)
+    via contextvars unique sentinel per caller.
     """
 
     def __init__(self) -> None:
@@ -187,22 +213,32 @@ class SessionLock:
         """Whether the lock is currently held."""
         return self._lock.locked()
 
+    def _get_caller(self) -> Any:
+        task = asyncio.current_task()
+        if task is not None:
+            return task
+        sentinel = _caller_context.get()
+        if sentinel is None:
+            sentinel = object()
+            _caller_context.set(sentinel)
+        return sentinel
+
     async def acquire(self) -> None:
-        """Acquire the session lock, supporting re-entrancy within the same task."""
-        current = asyncio.current_task()
-        if current is not None and self._owner is current:
+        """Acquire the session lock, supporting re-entrancy within the same task or caller."""
+        caller = self._get_caller()
+        if caller is not _UNOWNED and self._owner is caller:
             self._count += 1
             return
         await self._lock.acquire()
-        self._owner = current
+        self._owner = caller
         self._count = 1
 
     def release(self) -> None:
         """Release the session lock."""
         if not self._lock.locked():
             return
-        current = asyncio.current_task()
-        if self._owner is not current:
+        caller = self._get_caller()
+        if self._owner is not caller:
             raise RuntimeError("Cannot release lock owned by another task")
         self._count -= 1
         if self._count == 0:

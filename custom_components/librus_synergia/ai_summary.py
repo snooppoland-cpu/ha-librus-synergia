@@ -31,6 +31,7 @@ from collections.abc import Callable, Hashable
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
 
+import aiohttp
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
@@ -1104,7 +1105,16 @@ class LibrusWeeklySummary:
                 await self._async_save()
                 if results is not None:
                     self._fire_events(manual=scheduled_for is None)
-            except (HomeAssistantError, ValueError, TypeError, KeyError, TimeoutError, OSError, RuntimeError) as err:
+            except (
+                HomeAssistantError,
+                aiohttp.ClientError,
+                ValueError,
+                TypeError,
+                KeyError,
+                TimeoutError,
+                OSError,
+                RuntimeError,
+            ) as err:
                 self.last_error = explain_error(err)
                 _LOGGER.warning("Weekly summary failed: %s", self.last_error)
                 raise HomeAssistantError(f"Weekly summary failed: {self.last_error}") from err
