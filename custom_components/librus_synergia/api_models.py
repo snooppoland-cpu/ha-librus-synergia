@@ -4,9 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Generic, TypeVar
-
-T = TypeVar("T")
+from typing import Any
 
 
 @dataclass(slots=True)
@@ -149,71 +147,6 @@ class GradeResponse:
 
 
 @dataclass(slots=True)
-class LessonResponse:
-    """Data model representing a timetable lesson returned by the API."""
-
-    id: int | str = ""
-    lesson_no: int | None = None
-    date: str = ""
-    subject_id: int | str | None = None
-    teacher_id: int | str | None = None
-    classroom_id: int | str | None = None
-    is_canceled: bool = False
-    is_substitution: bool = False
-
-    @classmethod
-    def from_dict(cls, data: Mapping[str, Any] | None = None) -> LessonResponse:
-        """Create LessonResponse from API dictionary."""
-        if not data or not isinstance(data, Mapping):
-            return cls()
-
-        subject = data.get("Subject")
-        subject_id = subject.get("Id") if isinstance(subject, Mapping) else subject
-
-        teacher = data.get("Teacher")
-        teacher_id = teacher.get("Id") if isinstance(teacher, Mapping) else teacher
-
-        classroom = data.get("Classroom")
-        classroom_id = classroom.get("Id") if isinstance(classroom, Mapping) else classroom
-
-        return cls(
-            id=data.get("Id", ""),
-            lesson_no=data.get("LessonNo"),
-            date=str(data.get("Date", "")),
-            subject_id=subject_id,
-            teacher_id=teacher_id,
-            classroom_id=classroom_id,
-            is_canceled=bool(data.get("IsCanceled", False)),
-            is_substitution=bool(data.get("IsSubstitution", False)),
-        )
-
-
-@dataclass(slots=True)
-class AttendanceResponse:
-    """Data model representing attendance record returned by the API."""
-
-    id: int | str = ""
-    lesson_no: int | None = None
-    date: str = ""
-    type_id: int | str | None = None
-
-    @classmethod
-    def from_dict(cls, data: Mapping[str, Any] | None = None) -> AttendanceResponse:
-        """Create AttendanceResponse from API dictionary."""
-        if not data or not isinstance(data, Mapping):
-            return cls()
-
-        type_obj = data.get("Type")
-        type_id = type_obj.get("Id") if isinstance(type_obj, Mapping) else type_obj
-        return cls(
-            id=data.get("Id", ""),
-            lesson_no=data.get("LessonNo"),
-            date=str(data.get("Date", "")),
-            type_id=type_id,
-        )
-
-
-@dataclass(slots=True)
 class TeacherResponse:
     """Data model representing a teacher returned by the API."""
 
@@ -237,13 +170,3 @@ class TeacherResponse:
             first_name=str(data.get("FirstName") or ""),
             last_name=str(data.get("LastName") or ""),
         )
-
-
-@dataclass(slots=True)
-class ApiResponse(Generic[T]):
-    """Generic wrapper for typed API responses."""
-
-    status: str = "ok"
-    data: T | None = None
-    message: str | None = None
-    raw: dict[str, Any] = field(default_factory=dict)

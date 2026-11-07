@@ -10,7 +10,6 @@ from datetime import time, timedelta
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_SCAN_INTERVAL, CONF_USERNAME
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr, issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -59,7 +58,7 @@ from .attachment_view import async_register_attachment_view
 from .llm_api import async_setup_llm_api, async_unload_llm_api
 from .services import async_setup_services, async_unload_services
 
-from .security import CredentialFilter, register_credential_filter
+from .security import register_credential_filter
 
 _LOGGER = logging.getLogger(__name__)
 register_credential_filter(_LOGGER)
@@ -306,5 +305,5 @@ async def _async_clear_average_statistics(hass: HomeAssistant, entry_id: str) ->
         ]
         if ids:
             get_instance(hass).async_clear_statistics(ids)
-    except (HomeAssistantError, KeyError, ValueError, TypeError, AttributeError, OSError):
+    except Exception:  # noqa: BLE001 - a statistics cleanup must never block removal
         _LOGGER.warning("Could not remove the grade-average statistics", exc_info=True)

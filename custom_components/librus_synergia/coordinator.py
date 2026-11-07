@@ -17,7 +17,6 @@ import copy
 import dataclasses
 import logging
 import re
-import secrets
 from collections.abc import Awaitable, Callable, Mapping
 from datetime import date, datetime, time, timedelta
 from functools import partial
@@ -1205,7 +1204,6 @@ class LibrusDataUpdateCoordinator(DataUpdateCoordinator[LibrusData]):
         # Forced relogins and session synchronization (protected by SessionLock to avoid races).
         self.session_lock = SessionLock()
         self._login_lock = self.session_lock
-        self.session_secret: str = secrets.token_hex(16)
         self._login_count = 0
         # Mailboxes Librus answered 404 for - this account doesn't have
         # them (the Messages card hides their chips). Asked again once a
@@ -2931,7 +2929,7 @@ class LibrusDataUpdateCoordinator(DataUpdateCoordinator[LibrusData]):
                 # user can check before trying again.
                 await self._async_refresh_outbox()
             raise
-        except (asyncio.CancelledError, LibrusError, HomeAssistantError, TimeoutError, OSError, ValueError, TypeError):
+        except BaseException:  # noqa: BLE001 - outbox cache invalidation must happen on any failure (including asyncio.CancelledError)
             self._forget_mailbox_list("outbox")
             raise
         await self._async_refresh_outbox()

@@ -1,15 +1,12 @@
-"""Security utilities for Librus Synergia: credential protection, CSRF validation, and session locking."""
+"""Security utilities for Librus Synergia: credential protection and session locking."""
 
 from __future__ import annotations
 
 import asyncio
-import hmac
 import logging
 import re
 from collections.abc import Mapping
 from typing import Any
-
-from librus_synergia.exceptions import LibrusUnexpectedResponseError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -34,9 +31,6 @@ SENSITIVE_KEYS = frozenset(
 )
 
 REDACTED = "***REDACTED***"
-
-# Valid CSRF token pattern: base64/hex/alphanumeric characters with length 8-256
-_CSRF_TOKEN_RE = re.compile(r"^[A-Za-z0-9_\-\.]{8,256}$")
 
 
 def sanitize_payload(payload: Any) -> Any:
@@ -130,39 +124,6 @@ def register_credential_filter(logger: logging.Logger | None = None) -> None:
 
 
 register_credential_filter(_LOGGER)
-
-
-def validate_csrf_token(
-    token: str | None,
-    session_secret: str | None = None,
-    min_length: int = 8,
-) -> str:
-    """Validate that a CSRF token is present, non-empty, and structurally valid.
-
-    If session_secret is provided, verifies that the CSRF token matches it.
-    Raises LibrusUnexpectedResponseError if the token is missing, too short,
-    contains illegal characters, or does not match session secret.
-    """
-    if token is None or not isinstance(token, str):
-        raise LibrusUnexpectedResponseError("CSRF token is missing or not a string")
-
-    token_clean = token.strip()
-    if not token_clean:
-        raise LibrusUnexpectedResponseError("CSRF token is empty")
-
-    if len(token_clean) < min_length:
-        raise LibrusUnexpectedResponseError(
-            f"CSRF token length ({len(token_clean)}) is less than minimum ({min_length})"
-        )
-
-    if not _CSRF_TOKEN_RE.match(token_clean):
-        raise LibrusUnexpectedResponseError("CSRF token contains invalid characters")
-
-    if session_secret is not None:
-        if not hmac.compare_digest(token_clean, session_secret):
-            raise LibrusUnexpectedResponseError("CSRF token does not match session secret")
-
-    return token_clean
 
 
 _UNOWNED = object()

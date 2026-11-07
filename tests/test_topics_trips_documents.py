@@ -215,8 +215,7 @@ async def test_attachment_view_streams_the_file(hass, hass_client) -> None:
     device = dr.async_get(hass).async_get_device_by_identifier((DOMAIN, entry.entry_id), entry.entry_id)
     http = await hass_client()
 
-    headers = {"X-CSRF-Token": entry.runtime_data.session_secret}
-    response = await http.get(f"/api/{DOMAIN}/attachment/{device.id}/99/55", headers=headers)
+    response = await http.get(f"/api/{DOMAIN}/attachment/{device.id}/99/55")
 
     assert response.status == 200
     assert await response.read() == b"%PDF-1.4"
@@ -238,8 +237,7 @@ async def test_homework_attachment_view_retries_after_session_expiry(hass, hass_
     device = dr.async_get(hass).async_get_device_by_identifier((DOMAIN, entry.entry_id), entry.entry_id)
     http = await hass_client()
 
-    headers = {"X-CSRF-Token": entry.runtime_data.session_secret}
-    response = await http.get(f"/api/{DOMAIN}/homework_attachment/{device.id}/31", headers=headers)
+    response = await http.get(f"/api/{DOMAIN}/homework_attachment/{device.id}/31")
 
     assert response.status == 200
     assert await response.read() == b"%PDF"
@@ -259,8 +257,7 @@ async def test_attachment_view_answers_502_on_an_unexpected_download_answer(
     device = dr.async_get(hass).async_get_device_by_identifier((DOMAIN, entry.entry_id), entry.entry_id)
     http = await hass_client()
 
-    headers = {"X-CSRF-Token": entry.runtime_data.session_secret}
-    response = await http.get(f"/api/{DOMAIN}/homework_attachment/{device.id}/31", headers=headers)
+    response = await http.get(f"/api/{DOMAIN}/homework_attachment/{device.id}/31")
 
     assert response.status == 502
     assert "bad sandbox key" not in await response.text()
@@ -277,12 +274,11 @@ async def test_school_file_view_downloads_through_home_assistant(hass, hass_clie
     device = dr.async_get(hass).async_get_device_by_identifier((DOMAIN, entry.entry_id), entry.entry_id)
     http = await hass_client()
 
-    headers = {"X-CSRF-Token": entry.runtime_data.session_secret}
-    response = await http.get(f"/api/{DOMAIN}/school_file/{device.id}/17613", headers=headers)
+    response = await http.get(f"/api/{DOMAIN}/school_file/{device.id}/17613")
 
     assert response.status == 200
     assert await response.read() == b"%PDF"
     client.async_download_school_file.assert_awaited_once_with("/pliki_szkoly/pobierz/1")
 
-    unknown = await http.get(f"/api/{DOMAIN}/school_file/{device.id}/999", headers=headers)
+    unknown = await http.get(f"/api/{DOMAIN}/school_file/{device.id}/999")
     assert unknown.status == 404
