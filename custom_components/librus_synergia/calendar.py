@@ -44,9 +44,11 @@ from .coordinator import (
 from .exam_prep import exam_lines, exams_by_day_and_subject
 from .forecast import DataMemo
 from .other_calendars import async_other_activities
+from .security import register_credential_filter
 from .subject_emoji import category_emoji, subject_emoji, with_emoji
 
 _LOGGER = logging.getLogger(__name__)
+register_credential_filter(_LOGGER)
 
 # Summary suffix per lesson change (see coordinator.lesson_change). The
 # companion cards match these to mark the lesson.

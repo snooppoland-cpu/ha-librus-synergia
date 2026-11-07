@@ -31,6 +31,7 @@ from collections.abc import Callable, Hashable
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
 
+import aiohttp
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
@@ -64,11 +65,13 @@ from .coordinator import (
 )
 from .exam_prep import exam_prep, missed_lessons
 from .forecast import PointThresholdsArg, subject_forecasts
+from .security import register_credential_filter
 
 if TYPE_CHECKING:
     from .coordinator import LibrusDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
+register_credential_filter(_LOGGER)
 
 STORAGE_VERSION = 1
 # A sensor state is capped at 255 characters by Home Assistant.
@@ -1102,7 +1105,16 @@ class LibrusWeeklySummary:
                 await self._async_save()
                 if results is not None:
                     self._fire_events(manual=scheduled_for is None)
-            except Exception as err:  # noqa: BLE001 - any provider error ends up here
+            except (
+                HomeAssistantError,
+                aiohttp.ClientError,
+                ValueError,
+                TypeError,
+                KeyError,
+                TimeoutError,
+                OSError,
+                RuntimeError,
+            ) as err:
                 self.last_error = explain_error(err)
                 _LOGGER.warning("Weekly summary failed: %s", self.last_error)
                 raise HomeAssistantError(f"Weekly summary failed: {self.last_error}") from err
@@ -1189,7 +1201,7 @@ class LibrusWeeklySummary:
                 blocking=True,
                 return_response=True,
             )
-        except Exception as err:
+        except Exception as err:  # noqa: BLE001
             if not _is_schema_error(err):
                 raise
             # A core whose ai_task has no `structure` support rejects the call

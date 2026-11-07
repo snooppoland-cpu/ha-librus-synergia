@@ -29,6 +29,7 @@ import logging
 from typing import Any
 
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
 from homeassistant.util import slugify
 
@@ -38,8 +39,10 @@ from librus_synergia.parsers import point_grades_percentage
 from .ai_summary import _day
 from .const import AVERAGE_MODE_ARITHMETIC, CONF_AVERAGE_MODE, DEFAULT_AVERAGE_MODE, DOMAIN
 from .coordinator import LibrusDataUpdateCoordinator, calculate_average
+from .security import register_credential_filter
 
 _LOGGER = logging.getLogger(__name__)
+register_credential_filter(_LOGGER)
 
 # A school year is ~300 days; anything older than this isn't this year's.
 MAX_DAYS = 400
@@ -250,7 +253,7 @@ class LibrusAverageHistory:
         self._signature = signature
         try:
             self._async_write(data, today, weighted)
-        except Exception:  # noqa: BLE001 - statistics are a bonus, never break updates
+        except (HomeAssistantError, ValueError, TypeError, KeyError, AttributeError, OSError):
             _LOGGER.exception("Could not write grade-average statistics")
 
     @callback

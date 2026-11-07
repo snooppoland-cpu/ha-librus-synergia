@@ -58,7 +58,11 @@ from .attachment_view import async_register_attachment_view
 from .llm_api import async_setup_llm_api, async_unload_llm_api
 from .services import async_setup_services, async_unload_services
 
+from .security import register_credential_filter
+
 _LOGGER = logging.getLogger(__name__)
+register_credential_filter(_LOGGER)
+register_credential_filter()
 
 type LibrusConfigEntry = ConfigEntry[LibrusDataUpdateCoordinator]
 

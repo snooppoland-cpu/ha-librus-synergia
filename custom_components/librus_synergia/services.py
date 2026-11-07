@@ -62,8 +62,10 @@ from .coordinator import (
     resolve_sender_name,
 )
 from .messaging import RecipientError, recipient_dict, resolve_recipient
+from .security import register_credential_filter
 
 _LOGGER = logging.getLogger(__name__)
+register_credential_filter(_LOGGER)
 
 SERVICE_GET_MESSAGE = "get_message"
 SERVICE_REFRESH = "refresh"

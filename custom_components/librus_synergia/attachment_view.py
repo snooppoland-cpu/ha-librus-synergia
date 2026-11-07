@@ -30,8 +30,10 @@ from homeassistant.exceptions import HomeAssistantError
 from librus_synergia import LibrusError
 
 from .const import DOMAIN
+from .security import register_credential_filter
 
 _LOGGER = logging.getLogger(__name__)
+register_credential_filter(_LOGGER)
 
 URL = f"/api/{DOMAIN}/attachment/{{device_id}}/{{message_id}}/{{attachment_id}}"
 HOMEWORK_URL = f"/api/{DOMAIN}/homework_attachment/{{device_id}}/{{attachment_id}}"
@@ -83,11 +85,10 @@ async def _async_download(
         coordinator = resolve_coordinator(hass, device_id)
     except HomeAssistantError as err:
         return web.Response(status=HTTPStatus.NOT_FOUND, text=str(err))
+
     try:
         file = await download(coordinator)
     except LibrusError as err:
-        # Librus's own error text stays in the log: it can carry URLs and
-        # session details that don't belong in a browser response.
         if getattr(err, "status_code", None) == 404:
             _LOGGER.debug("Attachment not found (%s): %s", request.path, err)
             return web.Response(status=HTTPStatus.NOT_FOUND, text="Not found")
