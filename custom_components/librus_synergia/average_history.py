@@ -39,8 +39,10 @@ from librus_synergia.parsers import point_grades_percentage
 from .ai_summary import _day
 from .const import AVERAGE_MODE_ARITHMETIC, CONF_AVERAGE_MODE, DEFAULT_AVERAGE_MODE, DOMAIN
 from .coordinator import LibrusDataUpdateCoordinator, calculate_average
+from .security import register_credential_filter
 
 _LOGGER = logging.getLogger(__name__)
+register_credential_filter(_LOGGER)
 
 # A school year is ~300 days; anything older than this isn't this year's.
 MAX_DAYS = 400

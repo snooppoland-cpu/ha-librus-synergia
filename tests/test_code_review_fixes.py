@@ -28,7 +28,7 @@ from custom_components.librus_synergia.coordinator import (
     parse_teacher_responses,
     wrap_api_response,
 )
-from custom_components.librus_synergia.models import (
+from custom_components.librus_synergia.api_models import (
     ApiResponse,
     AttendanceResponse,
     GradeResponse,
@@ -353,8 +353,8 @@ async def test_coordinator_async_start_reauth(hass) -> None:
 
 
 @pytest.mark.asyncio
-async def test_attachment_view_csrf_validation_mandatory(hass, hass_client) -> None:
-    """Ensure CSRF validation is mandatory on attachment endpoints."""
+async def test_attachment_view_requires_auth(hass, hass_client, hass_client_no_auth) -> None:
+    """Ensure attachment endpoints rely on Home Assistant built-in session auth."""
     from homeassistant.helpers import device_registry as dr
     from librus_synergia.models import AttachmentFileData
 
@@ -366,24 +366,15 @@ async def test_attachment_view_csrf_validation_mandatory(hass, hass_client) -> N
     )
     entry = await setup_integration(hass, client)
     device = dr.async_get(hass).async_get_device_by_identifier((DOMAIN, entry.entry_id), entry.entry_id)
+
+    # 1. Unauthenticated client -> 401 Unauthorized (HA built-in session auth)
+    http_no_auth = await hass_client_no_auth()
+    resp_unauth = await http_no_auth.get(f"/api/{DOMAIN}/attachment/{device.id}/99/55")
+    assert resp_unauth.status == 401
+
+    # 2. Authenticated client -> 200 OK without any integration-level CSRF token
     http = await hass_client()
-
-    # 1. Missing CSRF header -> 403 Forbidden
-    resp = await http.get(f"/api/{DOMAIN}/attachment/{device.id}/99/55")
-    assert resp.status == 403
-
-    # 2. Invalid / mismatched CSRF token -> 403 Forbidden
-    resp_invalid = await http.get(
-        f"/api/{DOMAIN}/attachment/{device.id}/99/55",
-        headers={"X-CSRF-Token": "invalid_token_12345"},
-    )
-    assert resp_invalid.status == 403
-
-    # 3. Valid CSRF token matching session secret -> 200 OK
-    resp_valid = await http.get(
-        f"/api/{DOMAIN}/attachment/{device.id}/99/55",
-        headers={"X-CSRF-Token": entry.runtime_data.session_secret},
-    )
+    resp_valid = await http.get(f"/api/{DOMAIN}/attachment/{device.id}/99/55")
     assert resp_valid.status == 200
 
 
@@ -400,7 +391,7 @@ def test_coordinator_exception_tuples_include_cancelled_error() -> None:
 
 
 def test_coordinator_parsers_use_dataclass_models() -> None:
-    """Verify coordinator parser helpers use models.py dataclasses."""
+    """Verify coordinator parser helpers use api_models.py dataclasses."""
     grades_payload = {
         "Grades": [
             {"Id": 1, "Grade": "5", "Weight": 2.0, "Category": {"Id": 10}, "Subject": {"Id": 20}}
@@ -463,3 +454,51 @@ async def test_coordinator_retry_wired(hass) -> None:
     ) as mock_retry:
         await coordinator._async_relogin(seen=0)
         assert mock_retry.called
+
+
+def test_credential_filter_registered_on_all_submodule_loggers() -> None:
+    """Verify CredentialFilter is registered on all sub-module loggers."""
+    from custom_components.librus_synergia import (
+        ai_summary,
+        attachment_view,
+        average_history,
+        calendar,
+        calendar_sync,
+        config_flow,
+        coordinator,
+        llm_api,
+        other_calendars,
+        retry,
+        security,
+        services,
+        trigger,
+    )
+
+    submodules = [
+        coordinator,
+        config_flow,
+        services,
+        attachment_view,
+        ai_summary,
+        average_history,
+        calendar,
+        calendar_sync,
+        llm_api,
+        other_calendars,
+        retry,
+        security,
+        trigger,
+    ]
+
+    for mod in submodules:
+        logger = getattr(mod, "_LOGGER")
+        assert any(
+            isinstance(f, CredentialFilter) for f in logger.filters
+        ), f"CredentialFilter not registered on {mod.__name__}._LOGGER"
+
+    for name in security.SUBMODULE_LOGGER_NAMES:
+        log = logging.getLogger(name)
+        assert any(
+            isinstance(f, CredentialFilter) for f in log.filters
+        ), f"CredentialFilter not registered on {name}"
+

@@ -64,11 +64,13 @@ from .coordinator import (
 )
 from .exam_prep import exam_prep, missed_lessons
 from .forecast import PointThresholdsArg, subject_forecasts
+from .security import register_credential_filter
 
 if TYPE_CHECKING:
     from .coordinator import LibrusDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
+register_credential_filter(_LOGGER)
 
 STORAGE_VERSION = 1
 # A sensor state is capped at 255 characters by Home Assistant.

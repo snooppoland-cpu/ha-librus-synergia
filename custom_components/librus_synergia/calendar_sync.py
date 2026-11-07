@@ -43,9 +43,11 @@ from .calendar import (
     _pt_conference_to_event,
     _pt_conferences_not_in_agenda,
 )
+from .security import register_credential_filter
 from .subject_emoji import fold
 
 _LOGGER = logging.getLogger(__name__)
+register_credential_filter(_LOGGER)
 
 _TAG_RE = re.compile(r"\[librus-sync:([0-9a-f]{6}):([A-Za-z0-9_.:-]+)\]")
 

@@ -45,7 +45,7 @@ from librus_synergia import (
 from librus_synergia.const import EXTRA_ACTIVITY_ENDPOINTS, MESSAGE_RECIPIENT_GROUPS
 from librus_synergia.parsers import mark_class_tutor, message_recipient_groups
 
-from .models import (
+from .api_models import (
     ApiResponse,
     AttendanceResponse,
     GradeResponse,
@@ -54,7 +54,7 @@ from .models import (
     TeacherResponse,
 )
 from .retry import async_retry_with_backoff
-from .security import SessionLock
+from .security import CredentialFilter, SessionLock, register_credential_filter
 from librus_synergia.changes import Changes, ChangeTracker, SeenIds
 from librus_synergia.exceptions import LibrusUnexpectedResponseError
 from librus_synergia.changes import absences as tracked_absences
@@ -245,6 +245,7 @@ if TYPE_CHECKING:
     from .ai_summary import LibrusWeeklySummary
 
 _LOGGER = logging.getLogger(__name__)
+register_credential_filter(_LOGGER)
 _T = TypeVar("_T")
 
 # Label for degraded-endpoint tracking of the informacja web page (listed

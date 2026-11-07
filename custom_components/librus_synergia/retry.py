@@ -10,7 +10,10 @@ from typing import TypeVar
 import aiohttp
 from librus_synergia.exceptions import LibrusConnectionError, LibrusServerMaintenanceError
 
+from .security import register_credential_filter
+
 _LOGGER = logging.getLogger(__name__)
+register_credential_filter(_LOGGER)
 
 T = TypeVar("T")
 

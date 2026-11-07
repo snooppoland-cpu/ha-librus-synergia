@@ -55,8 +55,9 @@ from librus_synergia import (
     LibrusInvalidCredentialsError,
 )
 
-from .models import MeResponse
+from .api_models import MeResponse
 from .retry import async_retry_with_backoff
+from .security import register_credential_filter
 
 from .subject_names import category_key, parse_category_names
 from .const import (
@@ -133,6 +134,7 @@ from .const import (
 from .forecast import DEFAULT_GRADE_THRESHOLDS
 
 _LOGGER = logging.getLogger(__name__)
+register_credential_filter(_LOGGER)
 
 PASSWORD_SELECTOR = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
 USER_SCHEMA = vol.Schema(

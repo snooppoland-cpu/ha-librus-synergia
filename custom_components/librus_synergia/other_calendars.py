@@ -17,8 +17,10 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
+from .security import register_credential_filter
 
 _LOGGER = logging.getLogger(__name__)
+register_credential_filter(_LOGGER)
 
 # How long one of the other calendars may take to answer.
 OTHER_CALENDAR_TIMEOUT = 15

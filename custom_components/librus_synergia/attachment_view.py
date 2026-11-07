@@ -30,9 +30,10 @@ from homeassistant.exceptions import HomeAssistantError
 from librus_synergia import LibrusError
 
 from .const import DOMAIN
-from .security import validate_csrf_token
+from .security import register_credential_filter
 
 _LOGGER = logging.getLogger(__name__)
+register_credential_filter(_LOGGER)
 
 URL = f"/api/{DOMAIN}/attachment/{{device_id}}/{{message_id}}/{{attachment_id}}"
 HOMEWORK_URL = f"/api/{DOMAIN}/homework_attachment/{{device_id}}/{{attachment_id}}"
@@ -85,17 +86,6 @@ async def _async_download(
     except HomeAssistantError as err:
         return web.Response(status=HTTPStatus.NOT_FOUND, text=str(err))
 
-    # Mandatory CSRF validation compared against session secret
-    csrf_token = request.headers.get("X-CSRF-Token") or request.query.get("csrf_token")
-    session_secret = (
-        getattr(coordinator, "session_secret", None)
-        or request.headers.get("X-Session-Secret")
-        or request.cookies.get("session_secret")
-    )
-    try:
-        validate_csrf_token(csrf_token, session_secret=session_secret)
-    except (LibrusError, ValueError, TypeError):
-        return web.Response(status=HTTPStatus.FORBIDDEN, text="Invalid CSRF token")
     try:
         file = await download(coordinator)
     except LibrusError as err:

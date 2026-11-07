@@ -51,8 +51,10 @@ from .coordinator import (
 )
 from .exam_prep import exam_prep, is_exam, missed_lessons
 from .forecast import subject_forecasts
+from .security import register_credential_filter
 
 _LOGGER = logging.getLogger(__name__)
+register_credential_filter(_LOGGER)
 
 LLM_API_ID = DOMAIN
 LLM_API_NAME = "Librus Synergia"

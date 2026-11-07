@@ -59,7 +59,10 @@ try:  # Home Assistant 2026.10+ validates with probatio, older ones voluptuous.
 except ImportError:  # pragma: no cover - older cores
     import voluptuous as vol
 
+from .security import register_credential_filter
+
 _LOGGER = logging.getLogger(__name__)
+register_credential_filter(_LOGGER)
 
 # Keys Home Assistant itself puts in `trigger` - event data must not hide them.
 _RESERVED = frozenset({"id", "idx", "alias", "platform", "description", "entity_id"})

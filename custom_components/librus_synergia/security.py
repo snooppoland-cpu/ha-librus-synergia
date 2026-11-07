@@ -75,6 +75,63 @@ class CredentialFilter(logging.Filter):
         return True
 
 
+SUBMODULE_LOGGER_NAMES: tuple[str, ...] = (
+    "custom_components.librus_synergia",
+    "custom_components.librus_synergia.absence_budget",
+    "custom_components.librus_synergia.absence_days",
+    "custom_components.librus_synergia.achievements",
+    "custom_components.librus_synergia.ai_summary",
+    "custom_components.librus_synergia.attachment_view",
+    "custom_components.librus_synergia.average_history",
+    "custom_components.librus_synergia.binary_sensor",
+    "custom_components.librus_synergia.button",
+    "custom_components.librus_synergia.calendar",
+    "custom_components.librus_synergia.calendar_sync",
+    "custom_components.librus_synergia.catch_up",
+    "custom_components.librus_synergia.condition",
+    "custom_components.librus_synergia.config_flow",
+    "custom_components.librus_synergia.coordinator",
+    "custom_components.librus_synergia.diagnostics",
+    "custom_components.librus_synergia.event",
+    "custom_components.librus_synergia.exam_prep",
+    "custom_components.librus_synergia.forecast",
+    "custom_components.librus_synergia.llm_api",
+    "custom_components.librus_synergia.logbook",
+    "custom_components.librus_synergia.messaging",
+    "custom_components.librus_synergia.other_calendars",
+    "custom_components.librus_synergia.repairs",
+    "custom_components.librus_synergia.retry",
+    "custom_components.librus_synergia.school_day",
+    "custom_components.librus_synergia.security",
+    "custom_components.librus_synergia.semester_summary",
+    "custom_components.librus_synergia.sensor",
+    "custom_components.librus_synergia.services",
+    "custom_components.librus_synergia.subject_colors",
+    "custom_components.librus_synergia.subject_emoji",
+    "custom_components.librus_synergia.subject_names",
+    "custom_components.librus_synergia.switch",
+    "custom_components.librus_synergia.system_health",
+    "custom_components.librus_synergia.todo",
+    "custom_components.librus_synergia.trigger",
+)
+
+
+def register_credential_filter(logger: logging.Logger | None = None) -> None:
+    """Register CredentialFilter on the given logger or all integration sub-module loggers."""
+    if logger is not None:
+        if not any(isinstance(f, CredentialFilter) for f in logger.filters):
+            logger.addFilter(CredentialFilter())
+        return
+
+    for name in SUBMODULE_LOGGER_NAMES:
+        log = logging.getLogger(name)
+        if not any(isinstance(f, CredentialFilter) for f in log.filters):
+            log.addFilter(CredentialFilter())
+
+
+register_credential_filter(_LOGGER)
+
+
 def validate_csrf_token(
     token: str | None,
     session_secret: str | None = None,
