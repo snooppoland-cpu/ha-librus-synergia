@@ -22,6 +22,7 @@ from http import HTTPStatus
 from typing import Any
 from urllib.parse import quote
 
+import aiohttp
 from aiohttp import web
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant
@@ -89,7 +90,7 @@ async def _async_download(
 
     try:
         file = await download(coordinator)
-    except LibrusError as err:
+    except (LibrusError, aiohttp.ClientError, TimeoutError, OSError) as err:
         if getattr(err, "status_code", None) == 404:
             _LOGGER.debug("Attachment not found (%s): %s", request.path, err)
             return web.Response(status=HTTPStatus.NOT_FOUND, text="Not found")
