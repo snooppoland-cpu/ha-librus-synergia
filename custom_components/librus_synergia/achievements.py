@@ -357,20 +357,20 @@ def compute_badges(
     for g, _value in sorted(points, key=lambda gv: (gv[0].add_date or "", gv[0].id)):
         if g.subject_id is None or scales is None:
             continue
-        thresholds = scales.for_subject(g.subject_id)
+        point_thresholds = scales.for_subject(g.subject_id)
         point_prefix = by_point_subject[g.subject_id]
         point_prefix.append(g)
         percentage = point_grades_percentage(point_prefix)
-        if thresholds is None or percentage is None or len(point_prefix) < SUBJECT_STAR_MIN_GRADES:
+        if point_thresholds is None or percentage is None or len(point_prefix) < SUBJECT_STAR_MIN_GRADES:
             continue
-        grade = predicted_grade(percentage, thresholds)
+        grade = predicted_grade(percentage, point_thresholds)
         if grade >= SUBJECT_STAR_AVERAGE and "subject_star" not in star.earned:
             star.earned["subject_star"] = (g.add_date or "")[:10]
     for subject_id, subject_points in by_point_subject.items():
-        thresholds = scales.for_subject(subject_id) if scales else None
+        point_thresholds = scales.for_subject(subject_id) if scales else None
         percentage = point_grades_percentage(subject_points)
-        if thresholds is not None and percentage is not None and len(subject_points) >= SUBJECT_STAR_MIN_GRADES:
-            best_average = max(best_average or 0.0, float(predicted_grade(percentage, thresholds)))
+        if point_thresholds is not None and percentage is not None and len(subject_points) >= SUBJECT_STAR_MIN_GRADES:
+            best_average = max(best_average or 0.0, float(predicted_grade(percentage, point_thresholds)))
     star.value = best_average
 
     honours = badge("honours", target=HONOURS_AVERAGE, unit="average")
@@ -381,7 +381,7 @@ def compute_badges(
             thresholds,
             weighted=weighted,
             owner=owner,
-            point_thresholds=point_thresholds,
+            point_thresholds=scales,
         )
     )
     honours.value = round(report, 2) if report is not None else None

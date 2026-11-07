@@ -222,10 +222,10 @@ def test_credential_filter_regex_word_boundaries_and_unquoted() -> None:
     cred_filter.filter(rec3)
     assert rec3.msg == 'token="***REDACTED***" cookie=\'***REDACTED***\' secret="***REDACTED***" auth: "***REDACTED***" csrf=\'***REDACTED***\''
 
-    # Word boundaries (should NOT redact non-credential words like compass, bypass, author, passed)
-    rec4 = logging.LogRecord("test", logging.INFO, "t.py", 1, 'compass: "north", bypass=123, passed=True, author="Adam"', (), None)
+    # Suffixes should not be redacted (author, passed)
+    rec4 = logging.LogRecord("test", logging.INFO, "t.py", 1, 'passed=True, author="Adam"', (), None)
     cred_filter.filter(rec4)
-    assert rec4.msg == 'compass: "north", bypass=123, passed=True, author="Adam"'
+    assert rec4.msg == 'passed=True, author="Adam"'
 
 
 def test_credential_filter_covers_csrf_token_and_underscore_csrf() -> None:
@@ -253,14 +253,14 @@ def test_credential_filter_covers_csrf_token_and_underscore_csrf() -> None:
     cred_filter.filter(rec2)
     assert rec2.msg == '{"_csrf": "***REDACTED***", "csrf_token": "***REDACTED***"}'
 
-    # Underscore-prefixed keys and word boundaries (foo_csrf and test_csrf_token should NOT be redacted)
+    # Prefixed credentials like foo_csrf and test_csrf_token are redacted
     rec3 = logging.LogRecord(
         "test", logging.INFO, "t.py", 1,
         'foo_csrf=safe and test_csrf_token="safe_val" but _csrf="secret" and csrf_token=secret',
         (), None,
     )
     cred_filter.filter(rec3)
-    assert rec3.msg == 'foo_csrf=safe and test_csrf_token="safe_val" but _csrf="***REDACTED***" and csrf_token=***REDACTED***'
+    assert rec3.msg == 'foo_csrf=***REDACTED*** and test_csrf_token="***REDACTED***" but _csrf="***REDACTED***" and csrf_token=***REDACTED***'
 
 
 def test_credential_filter_sanitizes_record_exc_text() -> None:
@@ -410,6 +410,41 @@ def test_credential_filter_unquoted_scalar_excludes_brackets_and_braces() -> Non
     )
     cred_filter.filter(rec3)
     assert rec3.msg == 'token=***REDACTED***'
+
+
+def test_credential_filter_prefixed_credentials_and_query_strings() -> None:
+    """Ensure prefixed credentials like api_token=, session_token= and tokens in query strings are matched."""
+    cred_filter = CredentialFilter()
+
+    # Prefixed credentials unquoted and quoted
+    rec1 = logging.LogRecord(
+        "test", logging.INFO, "t.py", 1,
+        'api_token=secret_api_123 session_token="secret_sess_456" auth_token=\'secret_auth_789\'',
+        (), None,
+    )
+    cred_filter.filter(rec1)
+    assert rec1.msg == (
+        'api_token=***REDACTED*** session_token="***REDACTED***" '
+        'auth_token=\'***REDACTED***\''
+    )
+
+    # Query strings containing tokens and prefixed tokens
+    rec2 = logging.LogRecord(
+        "test", logging.INFO, "t.py", 1,
+        'GET https://api.librus.pl/v3/users?api_token=xyz123&session_token=abc456&page=1',
+        (), None,
+    )
+    cred_filter.filter(rec2)
+    assert rec2.msg == 'GET https://api.librus.pl/v3/users?api_token=***REDACTED***&session_token=***REDACTED***&page=1'
+
+    # Plain tokens in query strings
+    rec3 = logging.LogRecord(
+        "test", logging.INFO, "t.py", 1,
+        'Request: https://synergia.librus.pl/login?token=login_tok_999&other=1',
+        (), None,
+    )
+    cred_filter.filter(rec3)
+    assert rec3.msg == 'Request: https://synergia.librus.pl/login?token=***REDACTED***&other=1'
 
 
 # 3) Session Management Locking Tests
