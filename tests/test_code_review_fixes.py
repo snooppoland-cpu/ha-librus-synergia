@@ -35,6 +35,7 @@ from custom_components.librus_synergia.retry import async_retry_with_backoff
 from custom_components.librus_synergia.security import (
     CredentialFilter,
     SessionLock,
+    _sanitize_arg,
     sanitize_payload,
 )
 
@@ -128,6 +129,33 @@ def test_credential_filter_redacts_log_records() -> None:
     )
     assert cred_filter.filter(record3) is True
     assert record3.args == "secret=***REDACTED***"
+
+
+def test_sanitize_arg_handles_base_exception() -> None:
+    """Ensure _sanitize_arg redacts credentials from BaseException instances."""
+    exc = Exception("Connection failed: token=abc12345 password=secretpass")
+    sanitized = _sanitize_arg(exc)
+    assert isinstance(sanitized, str)
+    assert sanitized == "Connection failed: token=***REDACTED*** password=***REDACTED***"
+
+    base_exc = BaseException("Critical error: auth: my_secret_token cookie=testcookie")
+    sanitized_base = _sanitize_arg(base_exc)
+    assert isinstance(sanitized_base, str)
+    assert sanitized_base == "Critical error: auth: ***REDACTED*** cookie=***REDACTED***"
+
+    # Also test through CredentialFilter with record.args having an exception
+    cred_filter = CredentialFilter()
+    record = logging.LogRecord(
+        name="librus_synergia.client",
+        level=logging.ERROR,
+        pathname="client.py",
+        lineno=42,
+        msg="API error: %s",
+        args=(exc,),
+        exc_info=None,
+    )
+    assert cred_filter.filter(record) is True
+    assert record.args == ("Connection failed: token=***REDACTED*** password=***REDACTED***",)
 
 
 def test_credential_filter_regex_word_boundaries_and_unquoted() -> None:
@@ -427,6 +455,14 @@ async def test_retry_with_backoff_client_response_error_status_filtering() -> No
     res_503 = await async_retry_with_backoff(op_503, max_retries=3, initial_delay=0.001)
     assert res_503 == "server_error_then_ok"
     assert attempts_503 == 2
+
+    # Unexpected loop exit raises RuntimeError
+    async def dummy_op() -> str:
+        return "ok"
+
+    with patch("custom_components.librus_synergia.retry.range", return_value=[]):
+        with pytest.raises(RuntimeError, match="Unexpected end of retry loop"):
+            await async_retry_with_backoff(dummy_op)
 
 
 # 6) Data Models (Dataclasses) Tests
@@ -817,6 +853,8 @@ def test_credential_filter_registered_on_all_submodule_loggers() -> None:
         ), f"CredentialFilter not registered on {mod.__name__}._LOGGER"
 
     assert "librus_synergia" in security.SUBMODULE_LOGGER_NAMES
+    assert "librus_synergia.client" in security.SUBMODULE_LOGGER_NAMES
+    assert "librus_synergia._dates" in security.SUBMODULE_LOGGER_NAMES
 
     for name in security.SUBMODULE_LOGGER_NAMES:
         log = logging.getLogger(name)

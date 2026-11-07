@@ -56,6 +56,8 @@ def _sanitize_arg(arg: Any) -> Any:
     """Sanitize an argument for logging."""
     if isinstance(arg, str):
         return _sanitize_string(arg)
+    if isinstance(arg, BaseException):
+        return _sanitize_string(str(arg))
     if isinstance(arg, (Mapping, list, tuple)):
         return sanitize_payload(arg)
     return arg
@@ -104,6 +106,8 @@ class CredentialFilter(logging.Filter):
 
 SUBMODULE_LOGGER_NAMES: tuple[str, ...] = (
     "librus_synergia",
+    "librus_synergia.client",
+    "librus_synergia._dates",
     "custom_components.librus_synergia",
     "custom_components.librus_synergia.absence_budget",
     "custom_components.librus_synergia.absence_days",

@@ -74,4 +74,5 @@ async def async_retry_with_backoff(
             delay = min(delay * backoff_factor, max_delay)
     if last_err is not None:
         raise last_err
+    raise RuntimeError("Unexpected end of retry loop")
 
