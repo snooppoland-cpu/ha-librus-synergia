@@ -2770,13 +2770,17 @@ class LibrusDataUpdateCoordinator(DataUpdateCoordinator[LibrusData]):
             )
         except LibrusSessionExpiredError:
             async with self._login_lock:
-                await self._async_relogin(seen)
-                self._messages_bootstrapped = False
-                self._messages_available = await self._client.async_bootstrap_messages()
-                self._messages_bootstrapped = True
-                payload = await async_retry_with_backoff(
-                    lambda: self._client.async_get_message(mailbox, message_id)
-                )
+                if self._login_count == seen:
+                    await self._async_relogin(seen)
+                    self._messages_bootstrapped = False
+                    self._messages_available = await self._client.async_bootstrap_messages()
+                    self._messages_bootstrapped = True
+                elif not self._messages_bootstrapped:
+                    self._messages_available = await self._client.async_bootstrap_messages()
+                    self._messages_bootstrapped = True
+            payload = await async_retry_with_backoff(
+                lambda: self._client.async_get_message(mailbox, message_id)
+            )
         # Opening a message marks it read, so this mailbox's cached list now
         # shows it unread. The unread count falls too and would trigger a
         # refetch anyway, but not when another message arrived meanwhile -
@@ -2804,11 +2808,15 @@ class LibrusDataUpdateCoordinator(DataUpdateCoordinator[LibrusData]):
             return await request()
         except LibrusSessionExpiredError:
             async with self._login_lock:
-                await self._async_relogin(seen)
-                self._messages_bootstrapped = False
-                self._messages_available = await self._client.async_bootstrap_messages()
-                self._messages_bootstrapped = True
-                return await request()
+                if self._login_count == seen:
+                    await self._async_relogin(seen)
+                    self._messages_bootstrapped = False
+                    self._messages_available = await self._client.async_bootstrap_messages()
+                    self._messages_bootstrapped = True
+                elif not self._messages_bootstrapped:
+                    self._messages_available = await self._client.async_bootstrap_messages()
+                    self._messages_bootstrapped = True
+            return await request()
 
     async def async_message_recipients(self, *, force: bool = False) -> list[MessageRecipientData]:
         """Who a message can go to (see `librus_synergia.parsers.
@@ -4841,13 +4849,17 @@ class LibrusDataUpdateCoordinator(DataUpdateCoordinator[LibrusData]):
             )
         except LibrusSessionExpiredError:
             async with self._login_lock:
-                await self._async_relogin(seen)
-                self._messages_bootstrapped = False
-                self._messages_available = await self._client.async_bootstrap_messages()
-                self._messages_bootstrapped = True
-                return await async_retry_with_backoff(
-                    lambda: self._client.async_download_message_attachment(attachment_id, message_id)
-                )
+                if self._login_count == seen:
+                    await self._async_relogin(seen)
+                    self._messages_bootstrapped = False
+                    self._messages_available = await self._client.async_bootstrap_messages()
+                    self._messages_bootstrapped = True
+                elif not self._messages_bootstrapped:
+                    self._messages_available = await self._client.async_bootstrap_messages()
+                    self._messages_bootstrapped = True
+            return await async_retry_with_backoff(
+                lambda: self._client.async_download_message_attachment(attachment_id, message_id)
+            )
 
     async def async_download_homework_attachment(self, attachment_id: str) -> Any:
         """Download one homework-assignment attachment for the attachment

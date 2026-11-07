@@ -1191,7 +1191,7 @@ class LibrusWeeklySummary:
                 blocking=True,
                 return_response=True,
             )
-        except (HomeAssistantError, ValueError, TypeError, KeyError) as err:
+        except Exception as err:  # noqa: BLE001
             if not _is_schema_error(err):
                 raise
             # A core whose ai_task has no `structure` support rejects the call

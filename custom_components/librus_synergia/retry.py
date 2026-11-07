@@ -68,5 +68,3 @@ async def async_retry_with_backoff(
             await asyncio.sleep(delay)
             delay = min(delay * backoff_factor, max_delay)
 
-    assert last_err is not None
-    raise last_err

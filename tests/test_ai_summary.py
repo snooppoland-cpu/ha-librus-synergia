@@ -538,3 +538,34 @@ async def test_one_audience_has_no_versions_and_old_store_still_loads(hass, hass
     state = hass.states.get(_entity_id(hass, "sensor", f"{entry.entry_id}_weekly_summary"))
     assert state.state == "Stary tekst"
     assert "versions" not in state.attributes
+
+
+async def test_structured_ai_task_schema_error_retries_as_text(hass) -> None:
+    """A model without structure schema support rejects with Invalid, and is retried as text."""
+    class Invalid(Exception):
+        """Custom schema validation error with Invalid in class name."""
+        pass
+
+    calls: list[dict] = []
+
+    async def _handler(call):
+        calls.append(dict(call.data))
+        if "structure" in call.data:
+            raise Invalid("extra keys not allowed @ data['structure']")
+        return {"data": _ANSWER}
+
+    hass.services.async_register(
+        "ai_task", "generate_data", _handler, supports_response=SupportsResponse.ONLY
+    )
+    entry = await setup_integration(hass, _client(), options=_AI_OPTIONS)
+    button_id = _entity_id(hass, "button", f"{entry.entry_id}_weekly_summary_generate")
+
+    await hass.services.async_call("button", "press", {"entity_id": button_id}, blocking=True)
+    await hass.async_block_till_done()
+
+    assert len(calls) == 2
+    assert "structure" in calls[0]
+    assert "structure" not in calls[1]
+    sensor_id = _entity_id(hass, "sensor", f"{entry.entry_id}_weekly_summary")
+    state = hass.states.get(sensor_id)
+    assert state.state == "Dobry tydzień z geografii"

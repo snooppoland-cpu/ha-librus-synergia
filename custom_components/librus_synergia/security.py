@@ -42,7 +42,9 @@ def sanitize_payload(payload: Any) -> Any:
         sanitized: dict[str, Any] = {}
         for key, value in payload.items():
             key_str = str(key).lower()
-            if key_str in SENSITIVE_KEYS or any(secret in key_str for secret in ("password", "secret", "token")):
+            if key_str in SENSITIVE_KEYS or any(
+                secret in key_str for secret in ("password", "secret", "token", "cookie", "auth", "csrf")
+            ):
                 sanitized[str(key)] = REDACTED
             elif isinstance(value, (Mapping, list, tuple)):
                 sanitized[str(key)] = sanitize_payload(value)
@@ -64,8 +66,17 @@ class CredentialFilter(logging.Filter):
             elif isinstance(record.args, (list, tuple)):
                 record.args = tuple(sanitize_payload(arg) for arg in record.args)
         if isinstance(record.msg, str):
-            for secret_pattern in (r"(password['\"]?\s*[:=]\s*['\"])[^'\"]+(['\"])", r"(pass['\"]?\s*[:=]\s*['\"])[^'\"]+(['\"])"):
-                record.msg = re.sub(secret_pattern, r"\g<1>***REDACTED***\g<2>", record.msg, flags=re.IGNORECASE)
+            for pattern, repl in (
+                (
+                    r"(\b(?:password|pass)['\"]?\s*[:=]\s*)(['\"])[^'\"]*?\2",
+                    r"\g<1>\g<2>***REDACTED***\g<2>",
+                ),
+                (
+                    r"(\b(?:password|pass)['\"]?\s*[:=]\s*)(?!['\"])([^\s,;&'\")\]\}]+)",
+                    r"\g<1>***REDACTED***",
+                ),
+            ):
+                record.msg = re.sub(pattern, repl, record.msg, flags=re.IGNORECASE)
         return True
 
 
@@ -152,7 +163,9 @@ class SessionLock:
     async def acquire(self) -> None:
         """Acquire the session lock, supporting re-entrancy within the same task."""
         current = asyncio.current_task()
-        if current is not None and self._owner is current:
+        if (current is not None and self._owner is current) or (
+            current is None and self._owner is None and self._lock.locked()
+        ):
             self._count += 1
             return
         await self._lock.acquire()

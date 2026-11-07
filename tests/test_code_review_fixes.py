@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import asyncio
+from datetime import timedelta
 import logging
 from pathlib import Path
 from unittest.mock import patch
@@ -16,6 +17,7 @@ from librus_synergia.exceptions import (
     LibrusAccountActionRequiredError,
     LibrusConnectionError,
     LibrusInvalidCredentialsError,
+    LibrusSessionExpiredError,
 )
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -60,6 +62,21 @@ def test_sanitize_payload_redacts_credentials() -> None:
     assert sanitized["login"] == "student123"
 
 
+def test_sanitize_payload_substring_keys() -> None:
+    """Ensure cookie, auth, csrf keys are sanitized via substring search."""
+    payload = {
+        "user_cookie_header": "cookie_val",
+        "client_auth_code": "auth_val",
+        "custom_csrf_value": "csrf_val",
+        "normal_field": "safe",
+    }
+    sanitized = sanitize_payload(payload)
+    assert sanitized["user_cookie_header"] == "***REDACTED***"
+    assert sanitized["client_auth_code"] == "***REDACTED***"
+    assert sanitized["custom_csrf_value"] == "***REDACTED***"
+    assert sanitized["normal_field"] == "safe"
+
+
 def test_credential_filter_redacts_log_records() -> None:
     """Ensure CredentialFilter strips sensitive credentials from log records."""
     cred_filter = CredentialFilter()
@@ -76,6 +93,30 @@ def test_credential_filter_redacts_log_records() -> None:
     args = record.args if isinstance(record.args, dict) else record.args[0]
     assert args["pass"] == "***REDACTED***"
     assert args["username"] == "admin"
+
+
+def test_credential_filter_regex_word_boundaries_and_unquoted() -> None:
+    """Ensure CredentialFilter regex respects word boundaries and scrubs unquoted values."""
+    cred_filter = CredentialFilter()
+
+    # Quoted values
+    rec1 = logging.LogRecord("test", logging.INFO, "t.py", 1, 'Connecting with password="supersecret"', (), None)
+    cred_filter.filter(rec1)
+    assert rec1.msg == 'Connecting with password="***REDACTED***"'
+
+    # Unquoted values
+    rec2 = logging.LogRecord("test", logging.INFO, "t.py", 1, "Connecting with password=supersecret status=ok", (), None)
+    cred_filter.filter(rec2)
+    assert rec2.msg == "Connecting with password=***REDACTED*** status=ok"
+
+    rec3 = logging.LogRecord("test", logging.INFO, "t.py", 1, "pass: supersecret, user: admin", (), None)
+    cred_filter.filter(rec3)
+    assert rec3.msg == "pass: ***REDACTED***, user: admin"
+
+    # Word boundaries (should NOT redact non-password/pass words)
+    rec4 = logging.LogRecord("test", logging.INFO, "t.py", 1, 'compass: "north", bypass=123, passed=True', (), None)
+    cred_filter.filter(rec4)
+    assert rec4.msg == 'compass: "north", bypass=123, passed=True'
 
 
 # 3) Session Management Locking Tests
@@ -146,6 +187,24 @@ async def test_session_lock_reentrant_same_task() -> None:
         assert lock._count == 1
     assert not lock.locked
     assert lock._count == 0
+
+
+@pytest.mark.asyncio
+async def test_session_lock_reentrant_none_current_task() -> None:
+    """Ensure SessionLock supports re-entrant acquisition when current_task is None without deadlocking."""
+    lock = SessionLock()
+    with patch("asyncio.current_task", return_value=None):
+        assert not lock.locked
+        async with lock:
+            assert lock.locked
+            assert lock._count == 1
+            async with lock:
+                assert lock.locked
+                assert lock._count == 2
+            assert lock.locked
+            assert lock._count == 1
+        assert not lock.locked
+        assert lock._count == 0
 
 
 @pytest.mark.asyncio
@@ -428,6 +487,86 @@ async def test_coordinator_retry_wired(hass) -> None:
     ) as mock_retry:
         await coordinator._async_relogin(seen=0)
         assert mock_retry.called
+
+
+@pytest.mark.asyncio
+async def test_coordinator_concurrent_expiration_mailbox_bootstrap(hass) -> None:
+    """Verify concurrent session expirations only bootstrap mailbox once and downloads run outside lock."""
+    user_input = {CONF_USERNAME: "1234567u", CONF_PASSWORD: "pw"}
+    entry = MockConfigEntry(domain=DOMAIN, unique_id="1234567", data=user_input)
+    entry.add_to_hass(hass)
+    client = build_mock_client()
+
+    from custom_components.librus_synergia.coordinator import LibrusDataUpdateCoordinator
+    coordinator = LibrusDataUpdateCoordinator(hass, entry, client, timedelta(minutes=15))
+
+    bootstrap_count = 0
+    async def mock_bootstrap():
+        nonlocal bootstrap_count
+        bootstrap_count += 1
+        return True
+
+    client.async_bootstrap_messages.side_effect = mock_bootstrap
+
+    lock_held_during_fetch: list[bool] = []
+    async def mock_get_message(mailbox, msg_id):
+        await asyncio.sleep(0.01)
+        if coordinator._login_count == 0:
+            raise LibrusSessionExpiredError("Expired")
+        lock_held_during_fetch.append(coordinator.session_lock.locked)
+        return {"id": msg_id, "body": "content"}
+
+    client.async_get_message.side_effect = mock_get_message
+
+    res1, res2 = await asyncio.gather(
+        coordinator.async_fetch_message("inbox", "msg1"),
+        coordinator.async_fetch_message("inbox", "msg2"),
+    )
+
+    assert res1 == {"id": "msg1", "body": "content"}
+    assert res2 == {"id": "msg2", "body": "content"}
+    assert bootstrap_count == 1
+    assert all(locked is False for locked in lock_held_during_fetch)
+
+
+@pytest.mark.asyncio
+async def test_coordinator_download_attachment_concurrent_expiration(hass) -> None:
+    """Verify concurrent attachment downloads only bootstrap mailbox once and download runs outside lock."""
+    user_input = {CONF_USERNAME: "1234567u", CONF_PASSWORD: "pw"}
+    entry = MockConfigEntry(domain=DOMAIN, unique_id="1234567", data=user_input)
+    entry.add_to_hass(hass)
+    client = build_mock_client()
+
+    from custom_components.librus_synergia.coordinator import LibrusDataUpdateCoordinator
+    coordinator = LibrusDataUpdateCoordinator(hass, entry, client, timedelta(minutes=15))
+
+    bootstrap_count = 0
+    async def mock_bootstrap():
+        nonlocal bootstrap_count
+        bootstrap_count += 1
+        return True
+
+    client.async_bootstrap_messages.side_effect = mock_bootstrap
+
+    lock_held_during_download: list[bool] = []
+    async def mock_download(att_id, msg_id):
+        await asyncio.sleep(0.01)
+        if coordinator._login_count == 0:
+            raise LibrusSessionExpiredError("Expired")
+        lock_held_during_download.append(coordinator.session_lock.locked)
+        return b"filecontent"
+
+    client.async_download_message_attachment.side_effect = mock_download
+
+    res1, res2 = await asyncio.gather(
+        coordinator.async_download_attachment("att1", "msg1"),
+        coordinator.async_download_attachment("att2", "msg2"),
+    )
+
+    assert res1 == b"filecontent"
+    assert res2 == b"filecontent"
+    assert bootstrap_count == 1
+    assert all(locked is False for locked in lock_held_during_download)
 
 
 def test_credential_filter_registered_on_all_submodule_loggers() -> None:
