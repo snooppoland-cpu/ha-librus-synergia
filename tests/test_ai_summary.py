@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 from datetime import date, datetime, time
 from unittest.mock import patch
@@ -452,12 +453,10 @@ async def test_provider_failure_is_reported_on_the_sensor(hass) -> None:
     entry = await setup_integration(hass, _client(), options=_AI_OPTIONS)
     button_id = _entity_id(hass, "button", f"{entry.entry_id}_weekly_summary_generate")
 
-    try:
+    with contextlib.suppress(Exception):  # surfaced as an error toast in the UI
         await hass.services.async_call(
             "button", "press", {"entity_id": button_id}, blocking=True
         )
-    except Exception:  # noqa: BLE001 - surfaced as an error toast in the UI
-        pass
     sensor_id = _entity_id(hass, "sensor", f"{entry.entry_id}_weekly_summary")
     assert "quota exceeded" in hass.states.get(sensor_id).attributes["error"]
     assert TOKEN_LIMIT_HINT not in hass.states.get(sensor_id).attributes["error"]

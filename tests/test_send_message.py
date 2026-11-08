@@ -227,7 +227,7 @@ def test_resolve_recipient_rules() -> None:
 async def test_option_turns_sending_on_without_a_reload(hass) -> None:
     from homeassistant.helpers import entity_registry as er
 
-    client, device_id = await _setup(hass)
+    _client, device_id = await _setup(hass)
     entry = hass.config_entries.async_entries(DOMAIN)[0]
     coordinator = entry.runtime_data
     registry = er.async_get(hass)
