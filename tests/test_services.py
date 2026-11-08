@@ -57,14 +57,7 @@ GRADES_CATEGORIES_PAYLOAD = {
 
 
 def _device_id(hass, entry) -> str:
-    # async_get_device(identifiers=...) is deprecated (identifiers are no
-    # longer guaranteed unique across config entries) - the modern,
-    # unambiguous lookup is by identifier scoped to the owning entry.
-    device = dr.async_get(hass).async_get_device_by_identifier(
-        (DOMAIN, entry.entry_id), entry.entry_id
-    )
-    assert device is not None
-    return device.id
+    return dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)[0].id
 
 
 async def test_get_message_service_returns_decoded_content(hass) -> None:

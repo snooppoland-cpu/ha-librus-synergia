@@ -107,14 +107,12 @@ async def test_get_grades_service_includes_point_grades(hass) -> None:
         async_get_subjects=SUBJECTS,
     )
     entry = await setup_integration(hass, client)
-    device = dr.async_get(hass).async_get_device_by_identifier(
-        ("librus_synergia", entry.entry_id), entry.entry_id
-    )
+    device_id = dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)[0].id
 
     response = await hass.services.async_call(
         "librus_synergia",
         "get_grades",
-        {"device_id": device.id},
+        {"device_id": device_id},
         blocking=True,
         return_response=True,
     )
