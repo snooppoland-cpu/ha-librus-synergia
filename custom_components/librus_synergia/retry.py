@@ -9,6 +9,7 @@ from collections.abc import Awaitable, Callable
 from typing import TypeVar
 
 import aiohttp
+
 from librus_synergia.exceptions import (
     LibrusConnectionError,
     LibrusServerMaintenanceError,

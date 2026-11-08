@@ -25,7 +25,7 @@ def test_every_translated_entity_has_an_icon() -> None:
 
 def test_every_action_has_an_icon() -> None:
     services = (_COMPONENT / "services.yaml").read_text(encoding="utf-8")
-    names = set(re.findall(r"^([a-z_]+):", services, re.M))
+    names = set(re.findall(r"^([a-z_]+):", services, re.MULTILINE))
     assert names == set(_load("icons.json")["services"])
 
 

@@ -7,11 +7,11 @@ from datetime import timedelta
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.helpers import entity_registry as er
+from librus_synergia import LibrusSessionExpiredError, LibrusUnexpectedResponseError
 from pytest_homeassistant_custom_component.common import async_capture_events
 
 from custom_components.librus_synergia.const import DOMAIN, EVENT_LIBRARY_CHANGED
 from custom_components.librus_synergia.coordinator import LibrusDataUpdateCoordinator
-from librus_synergia import LibrusSessionExpiredError, LibrusUnexpectedResponseError
 
 from .conftest import build_mock_client, make_config_entry, setup_integration
 

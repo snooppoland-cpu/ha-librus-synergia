@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 import logging
 from datetime import time, timedelta
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_SCAN_INTERVAL, CONF_USERNAME
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers import device_registry as dr, issue_registry as ir
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.storage import Store
@@ -18,10 +18,9 @@ from homeassistant.helpers.storage import Store
 from librus_synergia import LibrusApiClient, LibrusSessionData
 
 from .ai_summary import LibrusWeeklySummary
+from .attachment_view import async_register_attachment_view
 from .average_history import LibrusAverageHistory, statistic_id_prefix
 from .const import (
-    LIVE_OPTIONS,
-    UNMATCHED_SETTING_ISSUES,
     CONF_AI_AUDIENCE,
     CONF_AI_CONTEXT,
     CONF_AI_INCLUDE_MESSAGES,
@@ -39,26 +38,26 @@ from .const import (
     DEFAULT_AI_WEEKDAY,
     DEFAULT_SCAN_INTERVAL_MINUTES,
     DOMAIN,
+    LIVE_OPTIONS,
     MISC_DEGRADABLE_ENDPOINT_LABELS,
     OPTIONAL_ENDPOINT_LABELS,
     PLATFORMS,
     REFERENCE_DATA_ENDPOINT_LABELS,
     STATE_STORE_VERSION,
+    UNMATCHED_SETTING_ISSUES,
 )
 from .coordinator import (
     LibrusDataUpdateCoordinator,
     optional_endpoint_issue_id,
     payload_store_key,
     school_year_issue_id,
-    unmatched_setting_issue_id,
     state_store_key,
+    unmatched_setting_issue_id,
 )
 from .forecast import DataMemo
-from .attachment_view import async_register_attachment_view
 from .llm_api import async_setup_llm_api, async_unload_llm_api
-from .services import async_setup_services, async_unload_services
-
 from .security import register_credential_filter
+from .services import async_setup_services, async_unload_services
 
 _LOGGER = logging.getLogger(__name__)
 register_credential_filter()
@@ -291,8 +290,8 @@ async def _async_clear_average_statistics(hass: HomeAssistant, entry_id: str) ->
     if "recorder" not in hass.config.components:
         return
     try:
-        from homeassistant.components.recorder import get_instance  # noqa: PLC0415
-        from homeassistant.components.recorder.statistics import (  # noqa: PLC0415
+        from homeassistant.components.recorder import get_instance
+        from homeassistant.components.recorder.statistics import (
             async_list_statistic_ids,
         )
 
@@ -304,5 +303,5 @@ async def _async_clear_average_statistics(hass: HomeAssistant, entry_id: str) ->
         ]
         if ids:
             get_instance(hass).async_clear_statistics(ids)
-    except Exception:  # noqa: BLE001 - a statistics cleanup must never block removal
+    except Exception:  # broad catch - noqa: BLE001 - a statistics cleanup must never block removal
         _LOGGER.warning("Could not remove the grade-average statistics", exc_info=True)

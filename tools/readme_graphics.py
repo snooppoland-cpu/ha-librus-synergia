@@ -196,7 +196,7 @@ def hero(fonts: Path) -> None:
     svg.add(f'<rect class="typing" x="110" y="312" width="336" height="30" fill="{VIOLET}"/>')
     svg.add(
         '<g class="answer">'
-        f'<rect x="64" y="360" width="500" height="58" rx="15" fill="#2a2650"/>'
+        '<rect x="64" y="360" width="500" height="58" rx="15" fill="#2a2650"/>'
         + svg.text(84, 384, "6 lessons from 8:00 - a biology test in room 21,", 15, 600, PAPER)
         + svg.text(84, 405, "and the maths homework is due.", 15, 600, PAPER)
         + "</g>"

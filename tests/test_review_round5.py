@@ -10,6 +10,7 @@ from datetime import date, timedelta
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.util import dt as dt_util
+from librus_synergia import LibrusSessionExpiredError
 
 from custom_components.librus_synergia.const import STATE_STORE_VERSION
 from custom_components.librus_synergia.coordinator import (
@@ -17,7 +18,6 @@ from custom_components.librus_synergia.coordinator import (
     payload_store_key,
     state_store_key,
 )
-from librus_synergia import LibrusSessionExpiredError
 
 from .conftest import ME_PAYLOAD, build_mock_client, make_config_entry
 

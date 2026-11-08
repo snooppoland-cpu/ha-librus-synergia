@@ -7,6 +7,7 @@ from datetime import date, timedelta
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.helpers import entity_registry as er
+from librus_synergia.models import LessonData, LibrusData, MeData, OriginalLessonData
 from pytest_homeassistant_custom_component.common import async_capture_events
 
 from custom_components.librus_synergia.calendar import _lesson_to_event
@@ -15,7 +16,6 @@ from custom_components.librus_synergia.coordinator import (
     LibrusDataUpdateCoordinator,
     lesson_change,
 )
-from librus_synergia.models import LessonData, LibrusData, MeData, OriginalLessonData
 
 from .conftest import build_mock_client, make_config_entry, setup_integration
 

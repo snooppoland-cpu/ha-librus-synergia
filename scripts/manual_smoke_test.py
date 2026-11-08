@@ -32,7 +32,6 @@ from datetime import date, timedelta
 # Uses the `librus-synergia` library (pip install librus-synergia) - the
 # same client the integration depends on. No Home Assistant install needed.
 import aiohttp
-
 from librus_synergia import LibrusApiClient, LibrusError
 
 
@@ -65,7 +64,7 @@ async def main() -> int:
         today = date.today()
         week_start = today - timedelta(days=today.weekday())
 
-        endpoints: list[tuple[str, "asyncio.Future"]] = [
+        endpoints: list[tuple[str, asyncio.Future]] = [
             ("Me", client.async_get_me()),
             ("Grades", client.async_get_grades()),
             ("Grades/Categories", client.async_get_grade_categories()),

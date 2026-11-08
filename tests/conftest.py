@@ -9,10 +9,10 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 import pytest_socket
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
+from librus_synergia.client import LibrusSessionData
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.librus_synergia.const import DOMAIN
-from librus_synergia.client import LibrusSessionData
 
 # pytest-homeassistant-custom-component's own fixture setup calls
 # `pytest_socket.disable_socket(allow_unix_socket=True)` directly (plugins.py,
@@ -154,7 +154,7 @@ def build_mock_client(**overrides) -> AsyncMock:
     client.async_get_homework_assignments.return_value = {"HomeWorkAssignments": []}
     client.async_bootstrap_messages.return_value = False
     for key, value in overrides.items():
-        setattr(getattr(client, key), "return_value", value)
+        getattr(client, key).return_value = value
     return client
 
 

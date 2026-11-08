@@ -9,6 +9,19 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import UpdateFailed
 from homeassistant.util import dt as dt_util
+from librus_synergia import (
+    LibrusConnectionError,
+    LibrusInvalidCredentialsError,
+    LibrusSessionExpiredError,
+    LibrusUnexpectedResponseError,
+)
+from librus_synergia.models import (
+    AttendanceData,
+    AttendanceTypeData,
+    ClassData,
+    GradeData,
+    NoteData,
+)
 from pytest_homeassistant_custom_component.common import async_capture_events
 
 from custom_components.librus_synergia import async_remove_entry
@@ -29,19 +42,6 @@ from custom_components.librus_synergia.coordinator import (
     good_grade_streak,
     optional_endpoint_issue_id,
     school_year_issue_id,
-)
-from librus_synergia import (
-    LibrusConnectionError,
-    LibrusInvalidCredentialsError,
-    LibrusSessionExpiredError,
-    LibrusUnexpectedResponseError,
-)
-from librus_synergia.models import (
-    AttendanceData,
-    AttendanceTypeData,
-    ClassData,
-    GradeData,
-    NoteData,
 )
 
 from .conftest import build_mock_client, make_config_entry, messages_by_mailbox

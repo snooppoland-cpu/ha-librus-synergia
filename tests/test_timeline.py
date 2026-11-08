@@ -15,7 +15,12 @@ from custom_components.librus_synergia.coordinator import (
     state_store_key,
 )
 
-from .conftest import build_mock_client, make_config_entry, saved_state, setup_integration
+from .conftest import (
+    build_mock_client,
+    make_config_entry,
+    saved_state,
+    setup_integration,
+)
 
 
 def _agenda(*ids: int) -> dict:

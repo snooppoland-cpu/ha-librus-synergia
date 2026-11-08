@@ -26,7 +26,8 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD
 from homeassistant.core import CALLBACK_TYPE, CoreState, HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
-from homeassistant.helpers import device_registry as dr, issue_registry as ir
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.event import async_call_later, async_track_time_change
 from homeassistant.helpers.start import async_at_started
 from homeassistant.helpers.storage import Store
@@ -41,16 +42,11 @@ from librus_synergia import (
     LibrusSessionData,
     LibrusSessionExpiredError,
 )
-from librus_synergia.const import EXTRA_ACTIVITY_ENDPOINTS, MESSAGE_RECIPIENT_GROUPS
-from librus_synergia.parsers import mark_class_tutor, message_recipient_groups
-
-from .api_models import MeResponse
-from .retry import async_retry_with_backoff
-from .security import SessionLock, register_credential_filter
 from librus_synergia.changes import Changes, ChangeTracker, SeenIds
-from librus_synergia.exceptions import LibrusUnexpectedResponseError
 from librus_synergia.changes import absences as tracked_absences
 from librus_synergia.changes import timetable_changes as tracked_timetable_changes
+from librus_synergia.const import EXTRA_ACTIVITY_ENDPOINTS, MESSAGE_RECIPIENT_GROUPS
+from librus_synergia.exceptions import LibrusUnexpectedResponseError
 from librus_synergia.models import (
     AttendanceData,
     AttendanceTypeData,
@@ -61,16 +57,16 @@ from librus_synergia.models import (
     GradeCategoryData,
     GradeData,
     GradingSystemData,
+    JustificationData,
     LessonData,
     LibrusData,
     LuckyNumberData,
     MessageData,
     MessageRecipientData,
-    JustificationData,
     NoteData,
     PointGradeData,
-    SentMessageData,
     SchoolData,
+    SentMessageData,
 )
 
 # Parsers live in the `librus-synergia` library. `merge_timetables`,
@@ -81,122 +77,127 @@ from librus_synergia.parsers import (  # noqa: F401
     decode_message_content,
     extract_student_identifier,
     extract_token_user_identifier,
+    mark_class_tutor,
     merge_timetables,
+    message_recipient_groups,
     parse_attendance_types,
     parse_attendances,
+    parse_auth_subjects,
     parse_behaviour_grades,
     parse_class,
     parse_comment_text_map,
     parse_descriptive_grades,
-    parse_auth_subjects,
     parse_descriptive_skills,
-    parse_grading_system,
-    parse_partial_grades,
+    parse_extra_activities,
     parse_free_day_types,
     parse_free_days,
     parse_grade_categories,
     parse_grade_value,
     parse_grades,
+    parse_grading_system,
     parse_homework_assignments,
     parse_homeworks,
     parse_id_name_map,
+    parse_justifications,
     parse_kindergarten_activity_types,
     parse_kindergarten_classrooms,
     parse_kindergarten_group,
     parse_kindergarten_teachers,
     parse_lesson_subjects,
+    parse_library_lendings,
     parse_lucky_number,
     parse_me,
     parse_message,
     parse_message_list,
+    parse_message_recipients,
     parse_messages,
     parse_notes,
     parse_parent_teacher_conferences,
-    parse_justifications,
-    parse_realizations,
-    parse_extra_activities,
-    parse_library_lendings,
-    parse_message_recipients,
-    validate_message,
+    parse_partial_grades,
     parse_plan_changes,
-    parse_school_files,
-    parse_school_trips,
-    parse_text_grade_categories,
-    parse_timetable_entries,
-    plan_differences,
-    parse_text_grades,
-    parse_user_class_register_number,
     parse_point_grade_categories,
     parse_point_grades,
+    parse_realizations,
     parse_school,
+    parse_school_files,
     parse_school_notices,
+    parse_school_trips,
     parse_student_number,
+    parse_text_grade_categories,
+    parse_text_grades,
+    parse_timetable_entries,
+    parse_user_class_register_number,
+    plan_differences,
     point_grades_enabled,
     resolve_sender_name,
+    validate_message,
 )
 
+from .achievements import Badge, compute_badges, key_title
+from .api_models import MeResponse
 from .const import (
-    MESSAGE_SEND_LIMIT_PER_HOUR,
     AVERAGE_MODE_ARITHMETIC,
     CONF_ANNOUNCEMENTS_ENABLED,
     CONF_AVERAGE_MODE,
     CONF_BEHAVIOUR_GRADES_ENABLED,
     CONF_COOKIES,
     CONF_DESCRIPTIVE_GRADES_ENABLED,
+    CONF_EXTRA_ACTIVITIES,
     CONF_FREE_DAYS_ENABLED,
+    CONF_GRADE_CATEGORY_NAMES,
     CONF_GRADE_THRESHOLDS,
     CONF_MESSAGES_COUNT,
-    CONF_EXTRA_ACTIVITIES,
     CONF_MESSAGES_ENABLED,
     CONF_POINT_GRADE_THRESHOLDS,
     CONF_POINT_GRADE_THRESHOLDS_BY_SUBJECT,
-    CONF_SUBJECT_NAMES,
-    CONF_GRADE_CATEGORY_NAMES,
     CONF_QUIET_HOURS_ENABLED,
     CONF_QUIET_HOURS_END,
     CONF_QUIET_HOURS_START,
     CONF_SESSION_LOGGED_IN_AT,
-    CONF_STUDENT_NUMBER,
     CONF_SMART_POLLING,
+    CONF_STUDENT_NUMBER,
+    CONF_SUBJECT_COLORS,
+    CONF_SUBJECT_NAMES,
     CORE_ENDPOINT_LABELS,
     DEFAULT_ANNOUNCEMENTS_ENABLED,
     DEFAULT_AVERAGE_MODE,
     DEFAULT_BEHAVIOUR_GRADES_ENABLED,
     DEFAULT_DESCRIPTIVE_GRADES_ENABLED,
+    DEFAULT_EXTRA_ACTIVITIES,
     DEFAULT_FREE_DAYS_ENABLED,
     DEFAULT_MESSAGES_COUNT,
-    DEFAULT_EXTRA_ACTIVITIES,
     DEFAULT_MESSAGES_ENABLED,
-    EXTRA_ACTIVITY_KINDS,
     DEFAULT_QUIET_HOURS_ENABLED,
     DEFAULT_QUIET_HOURS_END,
     DEFAULT_QUIET_HOURS_START,
     DEFAULT_SMART_POLLING,
     DOMAIN,
-    MAX_MESSAGES_COUNT,
-    MIN_MESSAGES_COUNT,
     EVENT_ACHIEVEMENT_UNLOCKED,
     EVENT_AGENDA_CHANGED,
     EVENT_FORECAST_CHANGED,
     EVENT_GRADE_CHANGED,
     EVENT_JUSTIFICATION_STATUS,
     EVENT_LIBRARY_CHANGED,
-    EVENT_NEW_SCHOOL_DOCUMENT,
-    EVENT_NEW_SCHOOL_TRIP,
+    EVENT_MESSAGE_READ,
     EVENT_NEW_ABSENCE,
     EVENT_NEW_ANNOUNCEMENT,
     EVENT_NEW_GRADE,
     EVENT_NEW_HOMEWORK,
     EVENT_NEW_HOMEWORK_ASSIGNMENT,
-    EVENT_MESSAGE_READ,
     EVENT_NEW_MESSAGE,
     EVENT_NEW_NOTE,
+    EVENT_NEW_SCHOOL_DOCUMENT,
+    EVENT_NEW_SCHOOL_TRIP,
     EVENT_TIMETABLE_CHANGED,
+    EXTRA_ACTIVITY_KINDS,
+    HELD_EVENTS_DELAY,
     ISSUE_OPTIONAL_ENDPOINT_DEGRADED,
     ISSUE_SCHOOL_YEAR_ROLLOVER,
-    CONF_SUBJECT_COLORS,
     LAST_GOOD_DATA_MAX_AGE,
     LUCKY_NUMBER_PUBLISH_HOUR,
+    MAX_MESSAGES_COUNT,
+    MESSAGE_SEND_LIMIT_PER_HOUR,
+    MIN_MESSAGES_COUNT,
     OPTIONAL_ENDPOINT_LABELS,
     OUTAGE_BACKOFF_MAX,
     REFERENCE_DATA_ENDPOINT_LABELS,
@@ -204,7 +205,6 @@ from .const import (
     SMART_POLLING_NIGHT,
     SMART_POLLING_NIGHT_END,
     SMART_POLLING_NIGHT_START,
-    HELD_EVENTS_DELAY,
     STATE_SAVE_DELAY,
     STATE_SAVE_MAX_INTERVAL,
     STATE_STORE_VERSION,
@@ -212,14 +212,6 @@ from .const import (
     STATUS_ERROR,
     STATUS_OK,
     STATUS_STALE,
-)
-from .achievements import Badge, compute_badges, key_title
-from .subject_colors import parse_subject_colors
-from .subject_names import (
-    category_key,
-    parse_category_names,
-    parse_subject_names,
-    rename_subjects,
 )
 from .forecast import (
     PointThresholds,
@@ -231,6 +223,15 @@ from .forecast import (
     parse_thresholds,
     point_grade_value,
     subject_forecasts,
+)
+from .retry import async_retry_with_backoff
+from .security import SessionLock, register_credential_filter
+from .subject_colors import parse_subject_colors
+from .subject_names import (
+    category_key,
+    parse_category_names,
+    parse_subject_names,
+    rename_subjects,
 )
 
 if TYPE_CHECKING:
@@ -2920,7 +2921,7 @@ class LibrusDataUpdateCoordinator(DataUpdateCoordinator[LibrusData]):
                 # user can check before trying again.
                 await self._async_refresh_outbox()
             raise
-        except BaseException:  # noqa: BLE001 - outbox cache invalidation must happen on any failure (including asyncio.CancelledError)
+        except BaseException:  # broad catch - noqa: BLE001 - outbox cache invalidation must happen on any failure (including asyncio.CancelledError)
             self._forget_mailbox_list("outbox")
             raise
         await self._async_refresh_outbox()
@@ -3872,7 +3873,7 @@ class LibrusDataUpdateCoordinator(DataUpdateCoordinator[LibrusData]):
         means every cycle (school day, 06:00-22:00), otherwise the minimum
         gap between fetches (a day without lessons, or the night)."""
         # Imported here: school_day -> ai_summary -> coordinator.
-        from .school_day import school_days  # noqa: PLC0415
+        from .school_day import school_days
 
         now = dt_util.as_local(now or dt_util.now())
         if now.hour >= SMART_POLLING_NIGHT_START or now.hour < SMART_POLLING_NIGHT_END:

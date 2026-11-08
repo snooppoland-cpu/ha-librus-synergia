@@ -5,12 +5,13 @@ from __future__ import annotations
 from datetime import timedelta
 
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
+from librus_synergia import LibrusConnectionError
 from pytest_homeassistant_custom_component.common import async_capture_events
 
 from custom_components.librus_synergia.const import EVENT_NEW_GRADE
 from custom_components.librus_synergia.coordinator import LibrusDataUpdateCoordinator
-from librus_synergia import LibrusConnectionError
 
 from .conftest import build_mock_client, make_config_entry, setup_integration
 

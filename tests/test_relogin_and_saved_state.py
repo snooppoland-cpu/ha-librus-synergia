@@ -9,6 +9,11 @@ from unittest.mock import patch
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.util import dt as dt_util
+from librus_synergia import (
+    LibrusConnectionError,
+    LibrusSessionExpiredError,
+    LibrusUnexpectedResponseError,
+)
 from pytest_homeassistant_custom_component.common import async_capture_events
 
 from custom_components.librus_synergia.const import (
@@ -22,13 +27,14 @@ from custom_components.librus_synergia.coordinator import (
     optional_endpoint_issue_id,
     state_store_key,
 )
-from librus_synergia import (
-    LibrusConnectionError,
-    LibrusSessionExpiredError,
-    LibrusUnexpectedResponseError,
-)
 
-from .conftest import build_mock_client, make_config_entry, messages_by_mailbox, setup_integration, saved_state
+from .conftest import (
+    build_mock_client,
+    make_config_entry,
+    messages_by_mailbox,
+    saved_state,
+    setup_integration,
+)
 
 # 19:00 UTC is 12:00 in the test time zone (US/Pacific).
 NOON = "2026-10-07T19:00:00+00:00"

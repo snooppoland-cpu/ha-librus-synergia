@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import timedelta
 
 from homeassistant.config_entries import ConfigEntryState
+from librus_synergia import LibrusConnectionError
+from librus_synergia.exceptions import LibrusUnexpectedResponseError
 from pytest_homeassistant_custom_component.common import async_capture_events
 
 from custom_components.librus_synergia.const import (
@@ -16,10 +18,13 @@ from custom_components.librus_synergia.coordinator import (
     LibrusDataUpdateCoordinator,
     state_store_key,
 )
-from librus_synergia import LibrusConnectionError
-from librus_synergia.exceptions import LibrusUnexpectedResponseError
 
-from .conftest import build_mock_client, make_config_entry, messages_by_mailbox, saved_state
+from .conftest import (
+    build_mock_client,
+    make_config_entry,
+    messages_by_mailbox,
+    saved_state,
+)
 
 BEHAVIOUR_OLD = {
     "Id": 1, "BehaviourGrade": {"Id": 2}, "Category": {"Id": 5}, "AddedBy": {"Id": 7},

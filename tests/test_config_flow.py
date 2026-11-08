@@ -18,9 +18,9 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.librus_synergia.const import (
     CONF_AI_AUDIENCE,
-    CONF_AI_LANGUAGE,
     CONF_AI_CONTEXT,
     CONF_AI_INCLUDE_MESSAGES,
+    CONF_AI_LANGUAGE,
     CONF_AI_TASK_ENTITY,
     CONF_AI_TIME,
     CONF_AI_WEEKDAY,
@@ -31,8 +31,8 @@ from custom_components.librus_synergia.const import (
     CONF_DESCRIPTIVE_GRADES_ENABLED,
     CONF_FREE_DAYS_ENABLED,
     CONF_HIDE_EMPTY_SUBJECTS,
-    CONF_MESSAGES_ENABLED,
     CONF_MESSAGE_SENDING_ENABLED,
+    CONF_MESSAGES_ENABLED,
     CONF_QUIET_HOURS_ENABLED,
     CONF_QUIET_HOURS_END,
     CONF_QUIET_HOURS_START,

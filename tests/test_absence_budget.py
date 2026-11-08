@@ -16,7 +16,10 @@ from librus_synergia.models import (
     StandingLessonData,
 )
 
-from custom_components.librus_synergia.absence_budget import absence_budget, current_semester
+from custom_components.librus_synergia.absence_budget import (
+    absence_budget,
+    current_semester,
+)
 
 # Tuesday. The (short) first semester ends on Friday 2026-10-30.
 _TODAY = date(2026, 10, 20)

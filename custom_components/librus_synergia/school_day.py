@@ -69,7 +69,7 @@ def school_days(data: LibrusData | None, owner: Hashable | None = None) -> dict[
 
 def _school_days(data: LibrusData) -> dict[date, SchoolDay]:
     # Imported here: sensor.py imports this module for its own entities.
-    from .sensor import _lesson_bounds  # noqa: PLC0415
+    from .sensor import _lesson_bounds
 
     free = _free_dates(data)
     days: dict[date, SchoolDay] = {}

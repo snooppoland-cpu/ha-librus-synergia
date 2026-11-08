@@ -1203,7 +1203,7 @@ class LibrusWeeklySummary:
                 blocking=True,
                 return_response=True,
             )
-        except Exception as err:  # noqa: BLE001
+        except Exception as err:  # broad catch - noqa: BLE001
             if not _is_schema_error(err):
                 raise
             # A core whose ai_task has no `structure` support rejects the call

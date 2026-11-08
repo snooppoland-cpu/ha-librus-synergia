@@ -14,8 +14,10 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import EVENT_HOMEASSISTANT_FINAL_WRITE
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
+from librus_synergia import LibrusConnectionError, LibrusSessionExpiredError
 
-from custom_components.librus_synergia import coordinator as coordinator_module, school_day
+from custom_components.librus_synergia import coordinator as coordinator_module
+from custom_components.librus_synergia import school_day
 from custom_components.librus_synergia.average_history import LibrusAverageHistory
 from custom_components.librus_synergia.const import DOMAIN, STATE_STORE_VERSION
 from custom_components.librus_synergia.coordinator import (
@@ -25,9 +27,10 @@ from custom_components.librus_synergia.coordinator import (
     payload_store_key,
     state_store_key,
 )
-from custom_components.librus_synergia.diagnostics import async_get_config_entry_diagnostics
+from custom_components.librus_synergia.diagnostics import (
+    async_get_config_entry_diagnostics,
+)
 from custom_components.librus_synergia.school_day import SchoolDayClock
-from librus_synergia import LibrusConnectionError, LibrusSessionExpiredError
 
 from .conftest import build_mock_client, make_config_entry, setup_integration
 
