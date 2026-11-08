@@ -758,9 +758,11 @@ async def test_retry_with_backoff_client_response_error_status_filtering() -> No
     async def dummy_op() -> str:
         return "ok"
 
-    with patch("custom_components.librus_synergia.retry.range", return_value=[]):
-        with pytest.raises(RuntimeError, match="Unexpected end of retry loop"):
-            await async_retry_with_backoff(dummy_op)
+    with (
+        patch("custom_components.librus_synergia.retry.range", return_value=[]),
+        pytest.raises(RuntimeError, match="Unexpected end of retry loop"),
+    ):
+        await async_retry_with_backoff(dummy_op)
 
 
 @pytest.mark.asyncio

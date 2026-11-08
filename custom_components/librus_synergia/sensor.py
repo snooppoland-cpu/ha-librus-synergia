@@ -2767,7 +2767,7 @@ class LibrusLessonTopicsSensor(LibrusSensorBase):
         missed = {
             ((a.date or "")[:10], _as_lesson_no(a.lesson_no))
             for a in data.attendances
-            if (t := _attendance_type(data, a.type_id)) is not None and not t.is_presence_kind
+            if (att_type := _attendance_type(data, a.type_id)) is not None and not att_type.is_presence_kind
         }
         rows = []
         for t in data.lesson_topics:
