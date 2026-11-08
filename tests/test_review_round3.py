@@ -262,18 +262,18 @@ async def test_attachment_view_rejects_odd_ids_and_hides_librus_errors(hass, has
         filename="plan\r\nX-Evil: 1.pdf", content_type="text/html", content=b"<p>"
     )
     entry = await setup_integration(hass, client)
-    device = dr.async_get(hass).async_get_device_by_identifier((DOMAIN, entry.entry_id), entry.entry_id)
+    device_id = dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)[0].id
     http = await hass_client()
 
-    odd = await http.get(f"/api/{DOMAIN}/attachment/{device.id}/99/a.b")
+    odd = await http.get(f"/api/{DOMAIN}/attachment/{device_id}/99/a.b")
     assert odd.status == 404
     client.async_download_message_attachment.assert_not_called()
 
-    failed = await http.get(f"/api/{DOMAIN}/attachment/{device.id}/99/55")
+    failed = await http.get(f"/api/{DOMAIN}/attachment/{device_id}/99/55")
     assert failed.status == 502
     assert "secret upstream detail" not in await failed.text()
 
-    ok = await http.get(f"/api/{DOMAIN}/homework_attachment/{device.id}/31")
+    ok = await http.get(f"/api/{DOMAIN}/homework_attachment/{device_id}/31")
     assert ok.status == 200
     assert ok.headers["X-Content-Type-Options"] == "nosniff"
     assert "\r" not in ok.headers["Content-Disposition"]

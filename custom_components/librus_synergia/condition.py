@@ -126,7 +126,7 @@ if Condition is not None:
 
         # Home Assistant before 2026.10 asks for a checker function instead.
         async def async_get_checker(self) -> Callable[..., bool]:
-            def checker(hass: HomeAssistant, variables: Any = None, **kwargs: Any) -> bool:
+            def checker(*args: Any, **kwargs: Any) -> bool:
                 return check(self._hass, self._key, self._target, self._options)
 
             return checker

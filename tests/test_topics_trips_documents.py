@@ -65,9 +65,9 @@ async def test_text_grade_on_subject_sensor_and_in_get_grades(hass) -> None:
     assert subject.attributes["text_grades"][0]["value"] == "Bardzo dobrze opanowany materiał"
     assert subject.attributes["text_grades"][0]["category"] == "zadanie"
 
-    device = dr.async_get(hass).async_get_device_by_identifier((DOMAIN, entry.entry_id), entry.entry_id)
+    device_id = dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)[0].id
     response = await hass.services.async_call(
-        DOMAIN, "get_grades", {"device_id": device.id}, blocking=True, return_response=True
+        DOMAIN, "get_grades", {"device_id": device_id}, blocking=True, return_response=True
     )
     assert response["text_grades"][0]["subject"] == "Matematyka"
 
@@ -212,10 +212,10 @@ async def test_attachment_view_streams_the_file(hass, hass_client) -> None:
         filename="Plan lekcji ąę.pdf", content_type="application/pdf", content=b"%PDF-1.4"
     )
     entry = await setup_integration(hass, client)
-    device = dr.async_get(hass).async_get_device_by_identifier((DOMAIN, entry.entry_id), entry.entry_id)
+    device_id = dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)[0].id
     http = await hass_client()
 
-    response = await http.get(f"/api/{DOMAIN}/attachment/{device.id}/99/55")
+    response = await http.get(f"/api/{DOMAIN}/attachment/{device_id}/99/55")
 
     assert response.status == 200
     assert await response.read() == b"%PDF-1.4"
@@ -235,10 +235,10 @@ async def test_homework_attachment_view_retries_after_session_expiry(hass, hass_
         AttachmentFileData(filename="karta.pdf", content_type="application/pdf", content=b"%PDF"),
     ]
     entry = await setup_integration(hass, client)
-    device = dr.async_get(hass).async_get_device_by_identifier((DOMAIN, entry.entry_id), entry.entry_id)
+    device_id = dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)[0].id
     http = await hass_client()
 
-    response = await http.get(f"/api/{DOMAIN}/homework_attachment/{device.id}/31")
+    response = await http.get(f"/api/{DOMAIN}/homework_attachment/{device_id}/31")
 
     assert response.status == 200
     assert await response.read() == b"%PDF"
@@ -255,10 +255,10 @@ async def test_attachment_view_answers_502_on_an_unexpected_download_answer(
     client = build_mock_client()
     client.async_download_homework_attachment.side_effect = ValueError("bad sandbox key")
     entry = await setup_integration(hass, client)
-    device = dr.async_get(hass).async_get_device_by_identifier((DOMAIN, entry.entry_id), entry.entry_id)
+    device_id = dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)[0].id
     http = await hass_client()
 
-    response = await http.get(f"/api/{DOMAIN}/homework_attachment/{device.id}/31")
+    response = await http.get(f"/api/{DOMAIN}/homework_attachment/{device_id}/31")
 
     assert response.status == 502
     assert "bad sandbox key" not in await response.text()
@@ -272,14 +272,14 @@ async def test_school_file_view_downloads_through_home_assistant(hass, hass_clie
         filename="Regulamin.pdf", content_type="application/pdf", content=b"%PDF"
     )
     entry = await setup_integration(hass, client)
-    device = dr.async_get(hass).async_get_device_by_identifier((DOMAIN, entry.entry_id), entry.entry_id)
+    device_id = dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)[0].id
     http = await hass_client()
 
-    response = await http.get(f"/api/{DOMAIN}/school_file/{device.id}/17613")
+    response = await http.get(f"/api/{DOMAIN}/school_file/{device_id}/17613")
 
     assert response.status == 200
     assert await response.read() == b"%PDF"
     client.async_download_school_file.assert_awaited_once_with("/pliki_szkoly/pobierz/1")
 
-    unknown = await http.get(f"/api/{DOMAIN}/school_file/{device.id}/999")
+    unknown = await http.get(f"/api/{DOMAIN}/school_file/{device_id}/999")
     assert unknown.status == 404

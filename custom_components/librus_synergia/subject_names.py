@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable, Mapping
 
-from .forecast import _subject_key
+from custom_components.librus_synergia.forecast import _subject_key
 
 # Longer than any real subject name; keeps a stray paste from becoming an
 # entity name.

@@ -53,10 +53,8 @@ async def _setup(hass, *, options: dict | None = None, **overrides):
     entry = await setup_integration(hass, client, options=options)
     # The mock account has no Wiadomości during the poll; switch it on here.
     entry.runtime_data._messages_available = True
-    device = dr.async_get(hass).async_get_device_by_identifier(
-        (DOMAIN, entry.entry_id), entry.entry_id
-    )
-    return client, device.id
+    device_id = dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)[0].id
+    return client, device_id
 
 
 async def _send(hass, device_id: str, **data):

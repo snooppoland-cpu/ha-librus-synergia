@@ -253,14 +253,14 @@ def test_credential_filter_covers_csrf_token_and_underscore_csrf() -> None:
     cred_filter.filter(rec2)
     assert rec2.msg == '{"_csrf": "***REDACTED***", "csrf_token": "***REDACTED***"}'
 
-    # Underscore-prefixed keys and word boundaries (foo_csrf and test_csrf_token should NOT be redacted)
+    # Prefixed credentials like foo_csrf and test_csrf_token are redacted
     rec3 = logging.LogRecord(
         "test", logging.INFO, "t.py", 1,
         'foo_csrf=safe and test_csrf_token="safe_val" but _csrf="secret" and csrf_token=secret',
         (), None,
     )
     cred_filter.filter(rec3)
-    assert rec3.msg == 'foo_csrf=safe and test_csrf_token="safe_val" but _csrf="***REDACTED***" and csrf_token=***REDACTED***'
+    assert rec3.msg == 'foo_csrf=***REDACTED*** and test_csrf_token="***REDACTED***" but _csrf="***REDACTED***" and csrf_token=***REDACTED***'
 
 
 def test_credential_filter_sanitizes_record_exc_text() -> None:
@@ -412,36 +412,48 @@ def test_credential_filter_unquoted_scalar_excludes_brackets_and_braces() -> Non
     assert rec3.msg == 'token=***REDACTED***'
 
 
-def test_credential_filter_query_strings() -> None:
-    """Ensure tokens in query strings are matched while non-credential words like compass/bypass are preserved."""
+def test_credential_filter_prefixed_credentials_and_query_strings() -> None:
+    """Ensure prefixed credentials like oauth_token=, api_token=, session_token= and tokens in query strings are matched."""
     cred_filter = CredentialFilter()
 
-    # Query strings containing tokens
+    # Prefixed credentials unquoted and quoted
     rec1 = logging.LogRecord(
         "test", logging.INFO, "t.py", 1,
-        'GET https://api.librus.pl/v3/users?token=xyz123&page=1',
+        'api_token=secret_api_123 session_token="secret_sess_456" auth_token=\'secret_auth_789\' oauth_token="secret_oauth"',
         (), None,
     )
     cred_filter.filter(rec1)
-    assert rec1.msg == 'GET https://api.librus.pl/v3/users?token=***REDACTED***&page=1'
+    assert rec1.msg == (
+        'api_token=***REDACTED*** session_token="***REDACTED***" '
+        'auth_token=\'***REDACTED***\' oauth_token="***REDACTED***"'
+    )
+
+    # Query strings containing tokens and prefixed tokens
+    rec2 = logging.LogRecord(
+        "test", logging.INFO, "t.py", 1,
+        'GET https://api.librus.pl/v3/users?api_token=xyz123&session_token=abc456&page=1',
+        (), None,
+    )
+    cred_filter.filter(rec2)
+    assert rec2.msg == 'GET https://api.librus.pl/v3/users?api_token=***REDACTED***&session_token=***REDACTED***&page=1'
 
     # Plain tokens in query strings
-    rec2 = logging.LogRecord(
+    rec3 = logging.LogRecord(
         "test", logging.INFO, "t.py", 1,
         'Request: https://synergia.librus.pl/login?token=login_tok_999&other=1',
         (), None,
     )
-    cred_filter.filter(rec2)
-    assert rec2.msg == 'Request: https://synergia.librus.pl/login?token=***REDACTED***&other=1'
+    cred_filter.filter(rec3)
+    assert rec3.msg == 'Request: https://synergia.librus.pl/login?token=***REDACTED***&other=1'
 
     # Words like bypass and compass are not falsely redacted
-    rec3 = logging.LogRecord(
+    rec4 = logging.LogRecord(
         "test", logging.INFO, "t.py", 1,
         'bypass=123 compass: "north" surpass=456',
         (), None,
     )
-    cred_filter.filter(rec3)
-    assert rec3.msg == 'bypass=123 compass: "north" surpass=456'
+    cred_filter.filter(rec4)
+    assert rec4.msg == 'bypass=123 compass: "north" surpass=456'
 
 
 # 3) Session Management Locking Tests
@@ -898,16 +910,16 @@ async def test_attachment_view_requires_auth(hass, hass_client, hass_client_no_a
         filename="test.pdf", content_type="application/pdf", content=b"%PDF"
     )
     entry = await setup_integration(hass, client)
-    device = dr.async_get(hass).async_get_device_by_identifier((DOMAIN, entry.entry_id), entry.entry_id)
+    device_id = dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)[0].id
 
     # 1. Unauthenticated client -> 401 Unauthorized (HA built-in session auth)
     http_no_auth = await hass_client_no_auth()
-    resp_unauth = await http_no_auth.get(f"/api/{DOMAIN}/attachment/{device.id}/99/55")
+    resp_unauth = await http_no_auth.get(f"/api/{DOMAIN}/attachment/{device_id}/99/55")
     assert resp_unauth.status == 401
 
     # 2. Authenticated client -> 200 OK without any integration-level CSRF token
     http = await hass_client()
-    resp_valid = await http.get(f"/api/{DOMAIN}/attachment/{device.id}/99/55")
+    resp_valid = await http.get(f"/api/{DOMAIN}/attachment/{device_id}/99/55")
     assert resp_valid.status == 200
 
 
@@ -923,23 +935,23 @@ async def test_homework_attachment_view(hass, hass_client, hass_client_no_auth) 
         filename="zadanie.pdf", content_type="application/pdf", content=b"%PDF-homework"
     )
     entry = await setup_integration(hass, client)
-    device = dr.async_get(hass).async_get_device_by_identifier((DOMAIN, entry.entry_id), entry.entry_id)
+    device_id = dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)[0].id
 
     # 1. Unauthenticated -> 401
     http_no_auth = await hass_client_no_auth()
-    resp_unauth = await http_no_auth.get(f"/api/{DOMAIN}/homework_attachment/{device.id}/42")
+    resp_unauth = await http_no_auth.get(f"/api/{DOMAIN}/homework_attachment/{device_id}/42")
     assert resp_unauth.status == 401
 
     # 2. Authenticated -> 200 with file content
     http = await hass_client()
-    resp_valid = await http.get(f"/api/{DOMAIN}/homework_attachment/{device.id}/42")
+    resp_valid = await http.get(f"/api/{DOMAIN}/homework_attachment/{device_id}/42")
     assert resp_valid.status == 200
     assert await resp_valid.read() == b"%PDF-homework"
     assert "zadanie.pdf" in resp_valid.headers["Content-Disposition"]
     client.async_download_homework_attachment.assert_awaited_once_with("42")
 
     # 3. Invalid ID -> 404
-    resp_invalid = await http.get(f"/api/{DOMAIN}/homework_attachment/{device.id}/invalid..id")
+    resp_invalid = await http.get(f"/api/{DOMAIN}/homework_attachment/{device_id}/invalid..id")
     assert resp_invalid.status == 404
 
 
@@ -955,27 +967,27 @@ async def test_school_file_view(hass, hass_client, hass_client_no_auth) -> None:
         filename="Regulamin.pdf", content_type="application/pdf", content=b"%PDF-school"
     )
     entry = await setup_integration(hass, client)
-    device = dr.async_get(hass).async_get_device_by_identifier((DOMAIN, entry.entry_id), entry.entry_id)
+    device_id = dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)[0].id
 
     # 1. Unauthenticated -> 401
     http_no_auth = await hass_client_no_auth()
-    resp_unauth = await http_no_auth.get(f"/api/{DOMAIN}/school_file/{device.id}/17613")
+    resp_unauth = await http_no_auth.get(f"/api/{DOMAIN}/school_file/{device_id}/17613")
     assert resp_unauth.status == 401
 
     # 2. Authenticated -> 200 with file content
     http = await hass_client()
-    resp_valid = await http.get(f"/api/{DOMAIN}/school_file/{device.id}/17613")
+    resp_valid = await http.get(f"/api/{DOMAIN}/school_file/{device_id}/17613")
     assert resp_valid.status == 200
     assert await resp_valid.read() == b"%PDF-school"
     assert "Regulamin.pdf" in resp_valid.headers["Content-Disposition"]
     client.async_download_school_file.assert_awaited_once_with("/pliki_szkoly/pobierz/1")
 
     # 3. Invalid ID -> 404
-    resp_invalid = await http.get(f"/api/{DOMAIN}/school_file/{device.id}/invalid..id")
+    resp_invalid = await http.get(f"/api/{DOMAIN}/school_file/{device_id}/invalid..id")
     assert resp_invalid.status == 404
 
     # 4. Unknown file ID -> 404
-    resp_unknown = await http.get(f"/api/{DOMAIN}/school_file/{device.id}/999")
+    resp_unknown = await http.get(f"/api/{DOMAIN}/school_file/{device_id}/999")
     assert resp_unknown.status == 404
 
 
@@ -992,11 +1004,11 @@ async def test_attachment_view_error_logging_redacts_credentials_via_filter(
         "Download failed at https://synergia.librus.pl/file?cookie=secret_session_cookie&token=secret_dl_token&_csrf=secret_csrf"
     )
     entry = await setup_integration(hass, client)
-    device = dr.async_get(hass).async_get_device_by_identifier((DOMAIN, entry.entry_id), entry.entry_id)
+    device_id = dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)[0].id
     http = await hass_client()
 
     with caplog.at_level(logging.WARNING):
-        resp = await http.get(f"/api/{DOMAIN}/attachment/{device.id}/99/55")
+        resp = await http.get(f"/api/{DOMAIN}/attachment/{device_id}/99/55")
         assert resp.status == 502
 
     log_text = caplog.text
@@ -1035,10 +1047,10 @@ async def test_attachment_view_catches_network_exceptions(
     client = build_mock_client()
     client.async_download_message_attachment.side_effect = err_map[exception_to_raise]
     entry = await setup_integration(hass, client)
-    device = dr.async_get(hass).async_get_device_by_identifier((DOMAIN, entry.entry_id), entry.entry_id)
+    device_id = dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)[0].id
     http = await hass_client()
 
-    resp = await http.get(f"/api/{DOMAIN}/attachment/{device.id}/99/55")
+    resp = await http.get(f"/api/{DOMAIN}/attachment/{device_id}/99/55")
     assert resp.status == 502
     assert "download failed" in (await resp.text()).lower()
 

@@ -55,12 +55,12 @@ CREDENTIAL_PATTERNS: tuple[tuple[str, str], ...] = (
     ),
     # Key-value credential patterns (quoted values)
     (
-        r"((?<!\w)(?:access_token|refresh_token|client_secret|password|pass|token|cookies|cookie|authorization|secret|auth|csrf_token|_csrf|csrf)['\"]?\s*[:=]\s*)(['\"])(?!Bearer\b)[^'\"]*?\2",
+        r"((?<![a-zA-Z0-9])(?:access_token|refresh_token|client_secret|password|pass|token|cookies|cookie|authorization|secret|auth|csrf_token|_csrf|csrf)['\"]?\s*[:=]\s*)(['\"])(?!Bearer\b)[^'\"]*?\2",
         r"\g<1>\g<2>***REDACTED***\g<2>",
     ),
     # Key-value credential patterns (unquoted values)
     (
-        r"((?<!\w)(?:access_token|refresh_token|client_secret|password|pass|token|cookies|cookie|authorization|secret|auth|csrf_token|_csrf|csrf)['\"]?\s*[:=]\s*)(?!['\"\[\{]|Bearer\b)([^\s,;&'\")\]\}\[\{]+)",
+        r"((?<![a-zA-Z0-9])(?:access_token|refresh_token|client_secret|password|pass|token|cookies|cookie|authorization|secret|auth|csrf_token|_csrf|csrf)['\"]?\s*[:=]\s*)(?!['\"\[\{]|Bearer\b)([^\s,;&'\")\]\}\[\{]+)",
         r"\g<1>***REDACTED***",
     ),
 )

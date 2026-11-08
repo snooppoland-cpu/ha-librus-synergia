@@ -61,7 +61,6 @@ from .services import async_setup_services, async_unload_services
 from .security import register_credential_filter
 
 _LOGGER = logging.getLogger(__name__)
-register_credential_filter(_LOGGER)
 register_credential_filter()
 
 type LibrusConfigEntry = ConfigEntry[LibrusDataUpdateCoordinator]
