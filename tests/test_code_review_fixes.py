@@ -1449,4 +1449,82 @@ async def test_coordinator_read_receipts_handles_non_dict_payload(hass) -> None:
     assert "msg_non_dict" not in coordinator.read_receipts
 
 
+def test_sensor_attr_options_are_lists() -> None:
+    """Verify _attr_options on LibrusRankSensor and LibrusStatusSensor is typed as list[str]."""
+    from custom_components.librus_synergia.sensor import (
+        LibrusRankSensor,
+        LibrusStatusSensor,
+    )
+
+    assert LibrusRankSensor.__annotations__["__attr_options"] == "list[str]"
+    assert LibrusStatusSensor.__annotations__["__attr_options"] == "list[str]"
+    assert isinstance(LibrusRankSensor.__dict__["__attr_options"], list)
+    assert isinstance(LibrusStatusSensor.__dict__["__attr_options"], list)
+
+
+def test_attendance_type_helper_with_string_type_id() -> None:
+    """Verify _attendance_type safely handles string-based type IDs."""
+    from librus_synergia.models import (
+        AttendanceData,
+        AttendanceTypeData,
+        LibrusData,
+        MeData,
+    )
+
+    from custom_components.librus_synergia.absence_days import (
+        _attendance_type as absence_attendance_type,
+    )
+    from custom_components.librus_synergia.absence_days import (
+        absence_days,
+    )
+    from custom_components.librus_synergia.exam_prep import (
+        _attendance_type as exam_attendance_type,
+    )
+    from custom_components.librus_synergia.exam_prep import (
+        missed_lessons,
+    )
+
+    type_absent = AttendanceTypeData(id=1, name="Nieobecność", is_presence_kind=False)
+    type_present = AttendanceTypeData(id=2, name="Obecność", is_presence_kind=True)
+    types = {1: type_absent, 2: type_present}
+
+    data = LibrusData(
+        me=MeData(account_id=1, first_name="Ola", last_name="Kowalska"),
+        grades=[],
+        grade_categories={},
+        notes=[],
+        attendances=[
+            AttendanceData(id=101, lesson_id=1, lesson_no=1, date="2026-11-01", semester=1, type_id=1),
+            AttendanceData(id=102, lesson_id=2, lesson_no=2, date="2026-11-01", semester=1, type_id="t7"),
+        ],
+        attendance_types=types,
+        timetable={},
+        homeworks=[],
+        school_notices=[],
+        lucky_number=None,
+        subjects={10: "Matematyka"},
+        teachers={},
+        classrooms={},
+        lesson_subjects={1: 10, 2: 10},
+    )
+
+    assert absence_attendance_type(data, 1) is type_absent
+    assert absence_attendance_type(data, "t7") is None
+    assert absence_attendance_type(data, None) is None
+    assert exam_attendance_type(data, 1) is type_absent
+    assert exam_attendance_type(data, "t7") is None
+
+    # missed_lessons and absence_days should safely process string-based IDs
+    missed = missed_lessons(data)
+    assert ("2026-11-01", 1) in missed
+    assert ("2026-11-01", 2) not in missed
+
+    days = absence_days(data)
+    assert len(days) == 1
+    assert days[0].date == "2026-11-01"
+    assert len(days[0].lessons) == 1
+    assert days[0].lessons[0].lesson_no == 1
+
+
+
 

@@ -18,6 +18,8 @@ from typing import Any
 
 from librus_synergia.models import HomeworkEventData, LibrusData
 
+from .absence_days import _attendance_type
+
 # Agenda entries that are graded assessments, matched on the category name
 # and, when the category doesn't match, on the free-text description: some
 # teachers file a "kartkówka" under "Inne" and name it only in the text
@@ -89,7 +91,7 @@ def missed_lessons(data: LibrusData) -> set[tuple[str, int | None]]:
     """(date, lesson number) of every lesson the student was absent from."""
     missed = set()
     for record in data.attendances:
-        kind = data.attendance_types.get(record.type_id) if record.type_id is not None else None
+        kind = _attendance_type(data, record.type_id)
         if kind is not None and not kind.is_presence_kind:
             missed.add(((record.date or "")[:10], _as_int(record.lesson_no)))
     return missed
