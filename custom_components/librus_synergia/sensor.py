@@ -517,9 +517,8 @@ async def async_setup_entry(
         prefix, suffix = f"{entry.entry_id}_subject_", "_average"
         for reg_entry in er.async_entries_for_config_entry(registry, entry.entry_id):
             uid = reg_entry.unique_id
-            if uid.startswith(prefix) and uid.endswith(suffix):
-                if uid[len(prefix) : -len(suffix)] not in keep:
-                    registry.async_remove(reg_entry.entity_id)
+            if uid.startswith(prefix) and uid.endswith(suffix) and uid[len(prefix) : -len(suffix)] not in keep:
+                registry.async_remove(reg_entry.entity_id)
 
     _add_new_subjects()
     entry.async_on_unload(coordinator.async_add_listener(_add_new_subjects))
@@ -1556,7 +1555,7 @@ def _badges(coordinator: LibrusDataUpdateCoordinator) -> list[dict[str, Any]]:
             "title": badge.title,
             "icon": badge.icon,
             "tiers": list(badge.tiers) or None,
-            "earned": [earned[key] for key in badge.keys() if key in earned],
+            "earned": [earned[key] for key in badge.keys() if key in earned],  # noqa: SIM118
             "value": badge.value,
             "target": badge.target,
             "unit": badge.unit,

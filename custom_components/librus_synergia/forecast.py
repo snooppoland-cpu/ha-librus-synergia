@@ -12,6 +12,7 @@ semester grade is given for), in the second semester the whole school year
 
 from __future__ import annotations
 
+import itertools
 import math
 import re
 import unicodedata
@@ -135,7 +136,7 @@ def parse_thresholds(text: str | None) -> tuple[float, ...]:
     except ValueError:
         return default
     if len(values) != 5 or any(
-        b <= a for a, b in zip(values, values[1:], strict=False)
+        b <= a for a, b in itertools.pairwise(values)
     ):
         return default
     if values[0] <= 1 or values[-1] >= 6:
@@ -157,7 +158,7 @@ def parse_point_thresholds(text: str | None) -> tuple[float, ...] | None:
     except ValueError:
         return None
     if len(values) != 5 or any(
-        b <= a for a, b in zip(values, values[1:], strict=False)
+        b <= a for a, b in itertools.pairwise(values)
     ):
         return None
     if values[0] <= 0 or values[-1] > 100:
