@@ -1480,7 +1480,7 @@ class LibrusRankSensor(LibrusSensorBase):
 
     _attr_translation_key = "rank"
     _attr_device_class = SensorDeviceClass.ENUM
-    _attr_options: tuple[str, ...] = tuple(key for _, key in _RANK_TIERS)
+    _attr_options: list[str] = [key for _, key in _RANK_TIERS]  # noqa: RUF012
     _unrecorded_attributes = frozenset({"achievements", "badges"})
 
     def __init__(self, coordinator: LibrusDataUpdateCoordinator, entry: LibrusConfigEntry) -> None:
@@ -3134,7 +3134,7 @@ class LibrusStatusSensor(LibrusSensorBase):
         {"last_success", "last_attempt", "next_attempt", "last_error"}
     )
     _attr_device_class = SensorDeviceClass.ENUM
-    _attr_options: tuple[str, ...] = tuple(STATUS_OPTIONS)
+    _attr_options: list[str] = STATUS_OPTIONS
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     # Reports the cycle itself (data source, failures), not just the data.
     _always_write = True

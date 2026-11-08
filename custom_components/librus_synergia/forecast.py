@@ -233,13 +233,13 @@ def parse_point_thresholds_by_subject(
         name, separator, values = entry.partition(":")
         thresholds = parse_point_thresholds(values) if separator else None
         key = _subject_key(name)
-        subject_id = names.get(key)
-        if subject_id is None:
-            subject_id = next((sid for sid in subjects if str(sid) == name.strip()), None)
-        if thresholds is None or subject_id is None:
+        forecast_subject_id = names.get(key)
+        if forecast_subject_id is None:
+            forecast_subject_id = next((sid for sid in subjects if str(sid) == name.strip()), None)
+        if thresholds is None or forecast_subject_id is None:
             unmatched.append(entry)
             continue
-        matched[subject_id] = thresholds
+        matched[forecast_subject_id] = thresholds
     return matched, unmatched
 
 

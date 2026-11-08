@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from librus_synergia.models import LibrusData
+from librus_synergia.models import AttendanceTypeData, LibrusData
 from librus_synergia.parsers import justified_dates
 
 # "Spóźnienie" (late) is a PRESENCE-kind type, like plain "Obecność" -
@@ -80,6 +80,13 @@ def lessons_text(count: int) -> str:
     return f"{count} lekcji"
 
 
+def _attendance_type(data: LibrusData, type_id: int | str | None) -> AttendanceTypeData | None:
+    # type_id can now be a str (see AttendanceData.type_id) - `.get()` on
+    # the int-keyed `attendance_types` dict just misses (None) for one,
+    # same as any other genuinely-unknown type id.
+    return data.attendance_types.get(type_id) if type_id is not None else None
+
+
 def absence_days(data: LibrusData) -> list[AbsenceDay]:
     """Every date with an absence (excused or not) or a late arrival,
     oldest first; lessons in lesson order. Records of an unknown type are
@@ -88,7 +95,7 @@ def absence_days(data: LibrusData) -> list[AbsenceDay]:
     for record in data.attendances:
         if not record.date or record.type_id is None:
             continue
-        attendance_type = data.attendance_types.get(record.type_id)
+        attendance_type = _attendance_type(data, record.type_id)
         if attendance_type is None:
             continue
         if attendance_type.is_presence_kind:

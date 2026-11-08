@@ -1523,7 +1523,7 @@ class LibrusDataUpdateCoordinator(DataUpdateCoordinator[LibrusData]):
         # The responses: their own file since 0.12.5-beta.9; older versions
         # kept them in the tracked state (moved to the new file with the next
         # save - `_state_dirty`).
-        source = payload_stored if payload_stored is not None else stored
+        payload_source = payload_stored if payload_stored is not None else stored
         if payload_stored is None and isinstance(stored.get("payloads"), dict):
             self._state_dirty = True
         # How fresh the saved responses are. They are written separately from
@@ -1552,7 +1552,7 @@ class LibrusDataUpdateCoordinator(DataUpdateCoordinator[LibrusData]):
                 trust_until = datetime.min.replace(tzinfo=dt_util.UTC)
             elif payloads_changed_at is None or payloads_saved_at < payloads_changed_at:
                 trust_until = payloads_saved_at
-        if isinstance(payloads := source.get("payloads"), dict):
+        if isinstance(payloads := payload_source.get("payloads"), dict):
             self._last_good = payloads
             if isinstance(units := payloads.get("Units"), dict):
                 self.point_grades_enabled = point_grades_enabled(units)
@@ -1562,7 +1562,7 @@ class LibrusDataUpdateCoordinator(DataUpdateCoordinator[LibrusData]):
             for label in _TIMETABLE_WEEK_LABELS:
                 if self._last_good.pop(label, None) is not None:
                     self._state_dirty = True
-        if isinstance(weeks := source.get("timetable"), dict):
+        if isinstance(weeks := payload_source.get("timetable"), dict):
             self._timetable_cache = weeks
         # Saved by 0.12.5-beta.10 or older: "Users/<the account's numeric
         # id>" - named after the field instead (diagnostics show the source).
