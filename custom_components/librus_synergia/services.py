@@ -35,9 +35,15 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
+from homeassistant.core import (
+    HomeAssistant,
+    ServiceCall,
+    ServiceResponse,
+    SupportsResponse,
+)
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
-from homeassistant.helpers import config_validation as cv, device_registry as dr
+from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import device_registry as dr
 from homeassistant.util import dt as dt_util
 
 from librus_synergia import LibrusError, LibrusMessageSendError
@@ -596,7 +602,7 @@ def _async_setup_message_writing(hass: HomeAssistant) -> None:
         `coordinator.data` only; no extra Librus request."""
         # Here, not at the top: calendar_sync builds on calendar.py, which
         # imports the package's __init__ - still loading when this module is.
-        from .calendar_sync import (  # noqa: PLC0415
+        from .calendar_sync import (
             async_sync_calendar,
             parse_categories,
             sync_items,

@@ -8,13 +8,22 @@ from datetime import timedelta
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
+from librus_synergia import LibrusConnectionError, LibrusUnexpectedResponseError
 from pytest_homeassistant_custom_component.common import async_capture_events
 
-from custom_components.librus_synergia.const import DOMAIN, EVENT_MESSAGE_READ, EVENT_NEW_GRADE
+from custom_components.librus_synergia.const import (
+    DOMAIN,
+    EVENT_MESSAGE_READ,
+    EVENT_NEW_GRADE,
+)
 from custom_components.librus_synergia.coordinator import LibrusDataUpdateCoordinator
-from librus_synergia import LibrusConnectionError, LibrusUnexpectedResponseError
 
-from .conftest import build_mock_client, make_config_entry, messages_by_mailbox, setup_integration
+from .conftest import (
+    build_mock_client,
+    make_config_entry,
+    messages_by_mailbox,
+    setup_integration,
+)
 
 SUBJECTS = {"Subjects": [{"Id": 9, "Name": "Edukacja muzyczna"}]}
 TEACHERS = {"Users": [{"Id": 7, "AccountId": "LID-AUTH-USER-T", "FirstName": "Anna", "LastName": "Nowak"}]}

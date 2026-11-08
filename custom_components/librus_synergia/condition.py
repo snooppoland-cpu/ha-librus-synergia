@@ -17,7 +17,8 @@ from typing import Any
 
 from homeassistant.const import CONF_OPTIONS, CONF_TARGET, STATE_ON
 from homeassistant.core import HomeAssistant, State
-from homeassistant.helpers import config_validation as cv, entity_registry as er
+from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.typing import ConfigType
 
 from .const import DOMAIN

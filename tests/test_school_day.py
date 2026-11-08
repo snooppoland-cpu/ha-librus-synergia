@@ -9,6 +9,8 @@ from unittest.mock import patch
 
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
+from librus_synergia.models import GradingSystemData, LibrusData, MeData
+from librus_synergia.parsers import merge_timetables, parse_grades
 from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
 from custom_components.librus_synergia.average_history import (
@@ -20,8 +22,6 @@ from custom_components.librus_synergia.const import CONF_EXTRA_CALENDARS, DOMAIN
 from custom_components.librus_synergia.other_calendars import OtherActivity
 from custom_components.librus_synergia.school_day import school_days
 from custom_components.librus_synergia.sensor import _sorted_lessons
-from librus_synergia.models import GradingSystemData, LibrusData, MeData
-from librus_synergia.parsers import merge_timetables, parse_grades
 
 from .conftest import build_mock_client, setup_integration
 

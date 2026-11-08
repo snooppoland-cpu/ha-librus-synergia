@@ -12,9 +12,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.loader import async_get_integration
 
-from . import LibrusConfigEntry
 from librus_synergia import LibrusError
 
+from . import LibrusConfigEntry
 from .const import (
     CONF_AI_CONTEXT,
     CONF_MESSAGES_ENABLED,

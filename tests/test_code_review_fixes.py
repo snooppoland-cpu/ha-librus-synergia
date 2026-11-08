@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import ast
 import asyncio
-from datetime import timedelta
 import logging
-from pathlib import Path
 import sys
+from datetime import timedelta
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -20,14 +20,12 @@ from librus_synergia.exceptions import (
     LibrusInvalidCredentialsError,
     LibrusSessionExpiredError,
 )
-from pytest_homeassistant_custom_component.common import MockConfigEntry
-
 from librus_synergia.models import GradeData
 from librus_synergia.parsers import parse_grades
+from pytest_homeassistant_custom_component.common import MockConfigEntry
+
 from custom_components.librus_synergia.api_models import (
-    AccountInfo,
     MeResponse,
-    UserInfo,
 )
 from custom_components.librus_synergia.const import DOMAIN
 from custom_components.librus_synergia.coordinator import (
@@ -699,6 +697,7 @@ async def test_retry_with_backoff_enforces_min_max_retries() -> None:
 async def test_retry_with_backoff_client_response_error_status_filtering() -> None:
     """Ensure ClientResponseError only retries 429 and 5xx, and fails immediately on 4xx."""
     from unittest.mock import MagicMock
+
     import aiohttp
 
     # 404 Not Found should fail immediately on attempt 1
@@ -928,6 +927,7 @@ async def test_homework_attachment_view(hass, hass_client, hass_client_no_auth) 
     """Ensure homework attachment view requires auth, validates ids, and streams file."""
     from homeassistant.helpers import device_registry as dr
     from librus_synergia.models import AttachmentFileData
+
     from tests.test_topics_trips_documents import setup_integration
 
     client = build_mock_client()
@@ -960,6 +960,7 @@ async def test_school_file_view(hass, hass_client, hass_client_no_auth) -> None:
     """Ensure school file view requires auth, validates ids, and streams file."""
     from homeassistant.helpers import device_registry as dr
     from librus_synergia.models import AttachmentFileData
+
     from tests.test_topics_trips_documents import FILES, setup_integration
 
     client = build_mock_client(async_get_school_files=FILES)
@@ -997,6 +998,7 @@ async def test_attachment_view_error_logging_redacts_credentials_via_filter(
 ) -> None:
     """Ensure attachment view relies on CredentialFilter to redact credentials in logged errors."""
     from homeassistant.helpers import device_registry as dr
+
     from tests.test_topics_trips_documents import setup_integration
 
     client = build_mock_client()
@@ -1036,6 +1038,7 @@ async def test_attachment_view_catches_network_exceptions(
     """Ensure attachment view catches aiohttp.ClientError, TimeoutError, and OSError returning 502."""
     import aiohttp
     from homeassistant.helpers import device_registry as dr
+
     from tests.test_topics_trips_documents import setup_integration
 
     err_map = {
@@ -1119,7 +1122,9 @@ async def test_coordinator_concurrent_expiration_mailbox_bootstrap(hass) -> None
     entry.add_to_hass(hass)
     client = build_mock_client()
 
-    from custom_components.librus_synergia.coordinator import LibrusDataUpdateCoordinator
+    from custom_components.librus_synergia.coordinator import (
+        LibrusDataUpdateCoordinator,
+    )
     coordinator = LibrusDataUpdateCoordinator(hass, entry, client, timedelta(minutes=15))
 
     bootstrap_count = 0
@@ -1159,7 +1164,9 @@ async def test_coordinator_download_attachment_concurrent_expiration(hass) -> No
     entry.add_to_hass(hass)
     client = build_mock_client()
 
-    from custom_components.librus_synergia.coordinator import LibrusDataUpdateCoordinator
+    from custom_components.librus_synergia.coordinator import (
+        LibrusDataUpdateCoordinator,
+    )
     coordinator = LibrusDataUpdateCoordinator(hass, entry, client, timedelta(minutes=15))
 
     bootstrap_count = 0
@@ -1246,6 +1253,7 @@ def test_credential_filter_registered_on_all_submodule_loggers() -> None:
 def test_is_schema_error() -> None:
     """Verify _is_schema_error detects ServiceValidationError and Invalid class names."""
     from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+
     from custom_components.librus_synergia.ai_summary import _is_schema_error
 
     class Invalid(Exception):
@@ -1267,6 +1275,7 @@ async def test_weekly_summary_schema_rejection_fallback(hass) -> None:
     """Verify weekly summary retries without structure when service raises ServiceValidationError."""
     from homeassistant.core import SupportsResponse
     from homeassistant.exceptions import ServiceValidationError
+
     from custom_components.librus_synergia.const import (
         CONF_AI_AUDIENCE,
         CONF_AI_TASK_ENTITY,
@@ -1318,6 +1327,7 @@ async def test_weekly_summary_non_schema_error_does_not_fallback(hass) -> None:
     """Verify weekly summary does not retry when service raises non-schema errors."""
     from homeassistant.core import SupportsResponse
     from homeassistant.exceptions import HomeAssistantError
+
     from custom_components.librus_synergia.const import (
         CONF_AI_AUDIENCE,
         CONF_AI_TASK_ENTITY,
@@ -1359,6 +1369,7 @@ async def test_weekly_summary_catches_aiohttp_client_error(hass) -> None:
     import aiohttp
     from homeassistant.core import SupportsResponse
     from homeassistant.exceptions import HomeAssistantError
+
     from custom_components.librus_synergia.const import (
         CONF_AI_AUDIENCE,
         CONF_AI_TASK_ENTITY,
@@ -1401,6 +1412,7 @@ def test_classvar_annotations() -> None:
 def test_attachment_view_file_response_csp() -> None:
     """Verify Content-Security-Policy header in _file_response."""
     from unittest.mock import MagicMock
+
     from custom_components.librus_synergia.attachment_view import _file_response
 
     mock_file = MagicMock()
@@ -1415,8 +1427,11 @@ def test_attachment_view_file_response_csp() -> None:
 @pytest.mark.asyncio
 async def test_coordinator_read_receipts_handles_non_dict_payload(hass) -> None:
     """Verify _async_refresh_read_receipts defensively ignores non-dict payloads."""
-    from custom_components.librus_synergia.coordinator import LibrusDataUpdateCoordinator
     from librus_synergia.models import MessageData
+
+    from custom_components.librus_synergia.coordinator import (
+        LibrusDataUpdateCoordinator,
+    )
     from tests.test_topics_trips_documents import setup_integration
 
     client = build_mock_client()

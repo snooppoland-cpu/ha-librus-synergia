@@ -80,7 +80,7 @@ async def _async_download(
 ) -> web.Response:
     # Imported here: services.py imports the coordinator, which this
     # module must not pull in at import time of __init__.
-    from .services import resolve_coordinator  # noqa: PLC0415
+    from .services import resolve_coordinator
 
     hass: HomeAssistant = request.app["hass"]
     try:

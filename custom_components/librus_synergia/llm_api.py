@@ -37,7 +37,12 @@ from librus_synergia.parsers import plan_differences, point_grades_percentage
 from .absence_budget import absence_budget
 from .ai_summary import _compact, _cut, _dated, _day
 from .catch_up import catch_up
-from .const import AVERAGE_MODE_ARITHMETIC, CONF_AVERAGE_MODE, DEFAULT_AVERAGE_MODE, DOMAIN
+from .const import (
+    AVERAGE_MODE_ARITHMETIC,
+    CONF_AVERAGE_MODE,
+    DEFAULT_AVERAGE_MODE,
+    DOMAIN,
+)
 from .coordinator import (
     LibrusDataUpdateCoordinator,
     calculate_average,
@@ -709,7 +714,7 @@ class AttendanceTool(_LibrusTool):
 
     async def _async_for_student(self, coordinator, data, today, args):
         # Imported here: sensor.py pulls in the whole entity platform.
-        from .sensor import _SUBJECT_ATTENDANCE_MIN_RECORDS, _subject_attendance  # noqa: PLC0415
+        from .sensor import _SUBJECT_ATTENDANCE_MIN_RECORDS, _subject_attendance
 
         since = today - timedelta(days=_int_arg(args, "days", 0, 0, 400)) if args.get("days") else None
         counts = {"present": 0, "late": 0, "absent_excused": 0, "absent_unexcused": 0}
@@ -898,7 +903,7 @@ class SchoolInfoTool(_LibrusTool):
     parameters = _schema({"student": _STUDENT_FIELD})
 
     async def _async_for_student(self, coordinator, data, today, args):
-        from .sensor import _student_number  # noqa: PLC0415
+        from .sensor import _student_number
 
         number, _source = _student_number(coordinator)
         cls = data.school_class

@@ -6,7 +6,6 @@ from datetime import date, timedelta
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.util import dt as dt_util
-
 from librus_synergia import LibrusSessionExpiredError
 from librus_synergia.models import LibrusData, MeData
 from librus_synergia.parsers import (

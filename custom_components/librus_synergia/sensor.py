@@ -15,8 +15,8 @@ from homeassistant.components.sensor import (
 from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfTime
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.event import async_track_point_in_time
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.event import async_track_point_in_time
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
@@ -30,13 +30,19 @@ from librus_synergia.models import (
     MessageData,
     PointGradeData,
 )
-from librus_synergia.parsers import justified_dates, plan_differences, point_grades_percentage
+from librus_synergia.parsers import (
+    justified_dates,
+    plan_differences,
+    point_grades_percentage,
+)
 
 from . import LibrusConfigEntry, librus_device_info
+from .absence_budget import MIN_HELD, AbsenceBudget, absence_budget
+from .absence_days import is_late_type_name
 from .ai_summary import MAX_STATE_LENGTH, LibrusWeeklySummary
+from .average_history import points_statistic_id
+from .catch_up import catch_up
 from .const import (
-    CONF_MESSAGE_SENDING_ENABLED,
-    DEFAULT_MESSAGE_SENDING_ENABLED,
     ATTR_SUBJECT_ID,
     AVERAGE_MODE_ARITHMETIC,
     AVERAGE_MODE_WEIGHTED,
@@ -46,6 +52,7 @@ from .const import (
     CONF_DESCRIPTIVE_GRADES_ENABLED,
     CONF_EXTRA_CALENDARS,
     CONF_HIDE_EMPTY_SUBJECTS,
+    CONF_MESSAGE_SENDING_ENABLED,
     CONF_STUDENT_NUMBER,
     CONF_SUBJECT_COLORS,
     DEFAULT_ANNOUNCEMENTS_ENABLED,
@@ -53,6 +60,7 @@ from .const import (
     DEFAULT_BEHAVIOUR_GRADES_ENABLED,
     DEFAULT_DESCRIPTIVE_GRADES_ENABLED,
     DEFAULT_HIDE_EMPTY_SUBJECTS,
+    DEFAULT_MESSAGE_SENDING_ENABLED,
     DOMAIN,
     STATUS_OPTIONS,
 )
@@ -69,14 +77,11 @@ from .coordinator import (
 )
 from .coordinator import (
     behaviour_month as _behaviour_month,
+)
+from .coordinator import (
     calculate_average as _calculate_average,
 )
-from .absence_budget import MIN_HELD, AbsenceBudget, absence_budget
-from .absence_days import is_late_type_name
-from .catch_up import catch_up
-from .semester_summary import semester_summary
 from .exam_prep import ExamPrep, exam_prep, topics_as_dicts, week_load
-from .average_history import points_statistic_id
 from .forecast import (
     HONOURS_AVERAGE,
     DataMemo,
@@ -88,7 +93,6 @@ from .forecast import (
     subject_forecasts,
 )
 from .other_calendars import OtherActivity, async_other_activities
-from .subject_colors import palette_slots, parse_subject_colors, student_subjects
 from .school_day import (
     SchoolDay,
     SchoolDayRefresh,
@@ -97,6 +101,8 @@ from .school_day import (
     next_start,
     school_days,
 )
+from .semester_summary import semester_summary
+from .subject_colors import palette_slots, parse_subject_colors, student_subjects
 
 _T = TypeVar("_T")
 
@@ -1474,7 +1480,7 @@ class LibrusRankSensor(LibrusSensorBase):
 
     _attr_translation_key = "rank"
     _attr_device_class = SensorDeviceClass.ENUM
-    _attr_options: list[str] = [key for _, key in _RANK_TIERS]
+    _attr_options: tuple[str, ...] = tuple(key for _, key in _RANK_TIERS)
     _unrecorded_attributes = frozenset({"achievements", "badges"})
 
     def __init__(self, coordinator: LibrusDataUpdateCoordinator, entry: LibrusConfigEntry) -> None:
@@ -3128,7 +3134,7 @@ class LibrusStatusSensor(LibrusSensorBase):
         {"last_success", "last_attempt", "next_attempt", "last_error"}
     )
     _attr_device_class = SensorDeviceClass.ENUM
-    _attr_options: list[str] = STATUS_OPTIONS
+    _attr_options: tuple[str, ...] = tuple(STATUS_OPTIONS)
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     # Reports the cycle itself (data source, failures), not just the data.
     _always_write = True

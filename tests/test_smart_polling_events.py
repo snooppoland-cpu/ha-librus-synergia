@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from homeassistant.helpers import entity_registry as er
 
-from custom_components.librus_synergia.const import DOMAIN, EVENT_NEW_ABSENCE, EVENT_NEW_NOTE
+from custom_components.librus_synergia.const import (
+    DOMAIN,
+    EVENT_NEW_ABSENCE,
+    EVENT_NEW_NOTE,
+)
 
 from .conftest import build_mock_client, setup_integration
 

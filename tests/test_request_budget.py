@@ -10,15 +10,20 @@ from unittest.mock import patch
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.util import dt as dt_util
+from librus_synergia import LibrusUnexpectedResponseError
 
 from custom_components.librus_synergia.const import STATE_STORE_VERSION
 from custom_components.librus_synergia.coordinator import (
     LibrusDataUpdateCoordinator,
     state_store_key,
 )
-from librus_synergia import LibrusUnexpectedResponseError
 
-from .conftest import build_mock_client, make_config_entry, messages_by_mailbox, saved_state
+from .conftest import (
+    build_mock_client,
+    make_config_entry,
+    messages_by_mailbox,
+    saved_state,
+)
 
 # 19:00 UTC is 12:00 in the test time zone (US/Pacific): ticks of a few
 # hours stay on the same local day.

@@ -22,10 +22,10 @@ replaces it. Nothing is fetched from Librus for this.
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from datetime import date, timedelta
 import hashlib
 import logging
+from collections.abc import Callable
+from datetime import date, timedelta
 from typing import Any
 
 from homeassistant.core import HomeAssistant, callback
@@ -33,11 +33,21 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
 from homeassistant.util import slugify
 
-from librus_synergia.models import GradeData, GradingSystemData, LibrusData, PointGradeData
+from librus_synergia.models import (
+    GradeData,
+    GradingSystemData,
+    LibrusData,
+    PointGradeData,
+)
 from librus_synergia.parsers import point_grades_percentage
 
 from .ai_summary import _day
-from .const import AVERAGE_MODE_ARITHMETIC, CONF_AVERAGE_MODE, DEFAULT_AVERAGE_MODE, DOMAIN
+from .const import (
+    AVERAGE_MODE_ARITHMETIC,
+    CONF_AVERAGE_MODE,
+    DEFAULT_AVERAGE_MODE,
+    DOMAIN,
+)
 from .coordinator import LibrusDataUpdateCoordinator, calculate_average
 from .security import register_credential_filter
 
@@ -155,7 +165,7 @@ def points_statistic_id(entry_id: str, subject_id: Any) -> str:
 def _metadata(statistic_id: str, name: str, unit: str | None = None) -> dict[str, Any]:
     """StatisticMetaData for this Home Assistant: `mean_type`/`unit_class`
     where the recorder knows them, the older `has_mean` otherwise."""
-    from homeassistant.components.recorder import models  # noqa: PLC0415
+    from homeassistant.components.recorder import models
 
     meta: dict[str, Any] = {
         "has_sum": False,
@@ -258,7 +268,7 @@ class LibrusAverageHistory:
 
     @callback
     def _async_write(self, data: LibrusData, today: date, weighted: bool) -> None:
-        from homeassistant.components.recorder.statistics import (  # noqa: PLC0415
+        from homeassistant.components.recorder.statistics import (
             async_add_external_statistics,
         )
 

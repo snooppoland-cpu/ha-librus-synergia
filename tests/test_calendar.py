@@ -8,13 +8,13 @@ from datetime import date, timedelta
 from homeassistant.components.calendar import CalendarEvent
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
-
-from custom_components.librus_synergia.calendar import _event_overlaps
-from custom_components.librus_synergia.const import DOMAIN
 from librus_synergia import (
     LibrusAuthError,
     LibrusSessionExpiredError,
 )
+
+from custom_components.librus_synergia.calendar import _event_overlaps
+from custom_components.librus_synergia.const import DOMAIN
 
 from .conftest import build_mock_client, setup_integration
 

@@ -11,8 +11,20 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
+from librus_synergia import LibrusConnectionError, LibrusSessionExpiredError
+from librus_synergia.client import LibrusSessionData
+from librus_synergia.models import (
+    AttachmentFileData,
+    GradingSystemData,
+    LessonData,
+    LibrusData,
+    MeData,
+    OriginalLessonData,
+)
+from librus_synergia.parsers import merge_timetables, parse_grades, parse_realizations
 from pytest_homeassistant_custom_component.common import (
     async_fire_time_changed,
 )
@@ -32,21 +44,18 @@ from custom_components.librus_synergia.coordinator import (
     payload_store_key,
     state_store_key,
 )
-from custom_components.librus_synergia.diagnostics import async_get_config_entry_diagnostics
-from custom_components.librus_synergia.forecast import DataMemo
-from librus_synergia import LibrusConnectionError, LibrusSessionExpiredError
-from librus_synergia.client import LibrusSessionData
-from librus_synergia.models import (
-    AttachmentFileData,
-    GradingSystemData,
-    LessonData,
-    LibrusData,
-    MeData,
-    OriginalLessonData,
+from custom_components.librus_synergia.diagnostics import (
+    async_get_config_entry_diagnostics,
 )
-from librus_synergia.parsers import merge_timetables, parse_grades, parse_realizations
+from custom_components.librus_synergia.forecast import DataMemo
 
-from .conftest import build_mock_client, make_config_entry, messages_by_mailbox, setup_integration, saved_state
+from .conftest import (
+    build_mock_client,
+    make_config_entry,
+    messages_by_mailbox,
+    saved_state,
+    setup_integration,
+)
 
 # ~05:00 in the test time zone (US/Pacific): clear of both midnights.
 _FROZEN = "2026-09-09T12:00:00+00:00"

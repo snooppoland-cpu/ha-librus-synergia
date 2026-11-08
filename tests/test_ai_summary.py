@@ -7,11 +7,11 @@ from datetime import date, datetime, time
 from unittest.mock import patch
 
 import pytest
-
 from homeassistant.core import SupportsResponse
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
+from librus_synergia.models import DescriptiveGradeData, PlanChangeData
 from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
 from custom_components.librus_synergia.ai_summary import (
@@ -33,8 +33,6 @@ from custom_components.librus_synergia.const import (
     DOMAIN,
     EVENT_WEEKLY_SUMMARY,
 )
-
-from librus_synergia.models import DescriptiveGradeData, PlanChangeData
 
 from .conftest import build_mock_client, make_config_entry, setup_integration
 
@@ -544,7 +542,6 @@ async def test_structured_ai_task_schema_error_retries_as_text(hass) -> None:
     """A model without structure schema support rejects with Invalid, and is retried as text."""
     class Invalid(Exception):
         """Custom schema validation error with Invalid in class name."""
-        pass
 
     calls: list[dict] = []
 

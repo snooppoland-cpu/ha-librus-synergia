@@ -6,11 +6,14 @@ from __future__ import annotations
 import pytest
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import device_registry as dr
-
-from custom_components.librus_synergia.const import CONF_MESSAGE_SENDING_ENABLED, DOMAIN
-from custom_components.librus_synergia.messaging import RecipientError, resolve_recipient
 from librus_synergia import LibrusMessageSendError
 from librus_synergia.models import MessageRecipientData, SentMessageData
+
+from custom_components.librus_synergia.const import CONF_MESSAGE_SENDING_ENABLED, DOMAIN
+from custom_components.librus_synergia.messaging import (
+    RecipientError,
+    resolve_recipient,
+)
 
 from .conftest import build_mock_client, setup_integration
 
@@ -269,11 +272,11 @@ async def test_sent_list_is_refreshed_right_after_sending(hass) -> None:
 
 async def test_a_refused_group_is_skipped_and_shown_in_diagnostics(hass) -> None:
     from homeassistant.helpers.json import json_bytes
+    from librus_synergia import LibrusUnexpectedResponseError
 
     from custom_components.librus_synergia.diagnostics import (
         async_get_config_entry_diagnostics,
     )
-    from librus_synergia import LibrusUnexpectedResponseError
 
     client, device_id = await _setup(hass, options=ON)
     types = {

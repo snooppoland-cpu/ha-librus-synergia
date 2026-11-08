@@ -28,7 +28,11 @@ from homeassistant.util import dt as dt_util
 from . import LibrusConfigEntry, librus_device_info
 from .ai_summary import _cut, _day
 from .const import DOMAIN
-from .coordinator import LibrusDataUpdateCoordinator, infer_subject_id, teacher_subject_ids
+from .coordinator import (
+    LibrusDataUpdateCoordinator,
+    infer_subject_id,
+    teacher_subject_ids,
+)
 from .school_day import SkipUnchangedUpdates
 
 STORAGE_VERSION = 1

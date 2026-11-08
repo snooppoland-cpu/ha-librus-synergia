@@ -8,6 +8,7 @@ from datetime import timedelta
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.helpers import device_registry as dr
 from homeassistant.setup import async_setup_component
+from librus_synergia import LibrusConnectionError
 from pytest_homeassistant_custom_component.common import (
     async_capture_events,
     async_mock_service,
@@ -23,9 +24,13 @@ from custom_components.librus_synergia.coordinator import (
     LibrusDataUpdateCoordinator,
     state_store_key,
 )
-from librus_synergia import LibrusConnectionError
 
-from .conftest import build_mock_client, make_config_entry, saved_state, setup_integration
+from .conftest import (
+    build_mock_client,
+    make_config_entry,
+    saved_state,
+    setup_integration,
+)
 
 CATEGORIES = {
     "Categories": [
